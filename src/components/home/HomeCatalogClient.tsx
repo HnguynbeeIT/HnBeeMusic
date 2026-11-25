@@ -24,6 +24,7 @@ import { TrackRow } from "@/components/track/TrackRow";
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { TrackSkeleton } from "@/components/track/TrackSkeleton";
 import { SourceBadge } from "@/components/track/SourceBadge";
+import { ArtistLink } from "@/components/artist/ArtistLink";
 
 type FilterValue = "all" | TrackSource;
 
@@ -176,7 +177,13 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
                 <h1 className="truncate text-2xl font-bold tracking-tight text-white sm:text-3xl">
                   {heroTrack.title}
                 </h1>
-                <p className="mt-1 text-sm text-zinc-400">{heroTrack.artist}</p>
+                <div className="mt-1">
+                  <ArtistLink
+                    name={heroTrack.artist}
+                    source={heroTrack.source}
+                    className="text-sm text-zinc-400"
+                  />
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 pt-1">

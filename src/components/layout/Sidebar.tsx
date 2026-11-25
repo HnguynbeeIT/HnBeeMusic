@@ -22,6 +22,8 @@ import { usePlayerStore } from "@/store/usePlayerStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePlaylistStore } from "@/store/usePlaylistStore";
+import { useArtistStore } from "@/store/useArtistStore";
+import { buildArtistHref } from "@/components/artist/ArtistLink";
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { BrandLogo } from "@/components/BrandLogo";
 import { BrandCredit } from "@/components/BrandCredit";
@@ -61,6 +63,7 @@ export function Sidebar() {
   const initAuth = useAuthStore((s) => s.initAuth);
   const setAuthModalOpen = useAuthStore((s) => s.setAuthModalOpen);
   const userPlaylists = usePlaylistStore((s) => s.playlists);
+  const followedArtists = useArtistStore((s) => s.followedArtists);
 
   useEffect(() => {
     void initAuth();
@@ -185,6 +188,30 @@ export function Sidebar() {
             </Link>
           </div>
           <div className="flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+            {followedArtists.length > 0 && (
+              <div className="mb-3 space-y-1">
+                <p className="px-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  Nghệ sĩ đang theo dõi
+                </p>
+                {followedArtists.slice(0, 5).map((artist) => (
+                  <Link
+                    key={artist.id}
+                    href={buildArtistHref(artist.name, artist.primarySource)}
+                    className="flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-white/5"
+                  >
+                    <TrackThumbnail
+                      src={artist.avatar}
+                      alt={artist.name}
+                      className="h-8 w-8 rounded-full"
+                    />
+                    <span className="truncate text-xs font-medium text-zinc-200 hover:text-white">
+                      {artist.name}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+
             {userPlaylists.map((pl) => (
               <button
                 key={pl.id}
