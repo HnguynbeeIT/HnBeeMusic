@@ -37,7 +37,8 @@ export function parseLrc(lrc: string): SyncedLyricLine[] {
       const mins = Number.parseInt(match[1], 10);
       const secs = Number.parseInt(match[2], 10);
       const fracRaw = match[3] || "0";
-      const frac = Number.parseInt(fracRaw.padEnd(3, "0").slice(0, 3), 10) / 1000;
+      const frac =
+        Number.parseInt(fracRaw.padEnd(3, "0").slice(0, 3), 10) / 1000;
       lines.push({
         time: mins * 60 + secs + frac,
         text,
@@ -48,12 +49,29 @@ export function parseLrc(lrc: string): SyncedLyricLine[] {
   return lines.sort((a, b) => a.time - b.time);
 }
 
-function cleanMetadataString(raw: string): string {
+/**
+ * Aggressively strips video/audio noise tokens to maximize LRCLIB match rate
+ * for both Vietnamese and international tracks.
+ */
+export function cleanTrackTitle(raw: string): string {
   return raw
-    .replace(/\s*\([^)]*(?:official|audio|video|lyric|audiophile|edition|mix|showcase|session|feat\.|ft\.)[^)]*\)/gi, "")
-    .replace(/\s*\[[^\]]*\]/g, "")
-    .replace(/\s*·.*$/g, "")
+    .replace(
+      /\s*[\(\[]\s*[^\)\]]*(?:official|music\s*video|lyric[s]?\s*video|lyrics?|audio|mv|visualizer|hd|4k|audiophile|edition|original\s*mix|showcase|session|live|prod\.|feat\.|ft\.)[^\)\]]*[\)\]]/gi,
+      ""
+    )
+    .replace(/\s*\|\s*.*$/g, "")
+    .replace(/\s+(?:ft\.?|feat\.?)\s+.*$/i, "")
+    .replace(/\s+-\s+(?:official\s*(?:mv|video|audio)|lyrics?.*)$/i, "")
     .trim();
+}
+
+export function cleanArtistName(raw: string): string {
+  return raw
+    .replace(/\s*-\s*Topic$/i, "")
+    .replace(/VEVO$/i, "")
+    .replace(/\s*·.*$/g, "")
+    .split(/,|&|feat\.|ft\.|x\s/i)[0]
+    ?.trim() || raw.trim();
 }
 
 export async function fetchLyrics(params: {
@@ -62,21 +80,34 @@ export async function fetchLyrics(params: {
   artist: string;
   duration?: number;
 }): Promise<LyricsResult> {
-  const cleanTitle = cleanMetadataString(params.title);
-  const cleanArtist = cleanMetadataString(params.artist).split(",")[0]?.trim() || params.artist;
+  // Handle "Artist - Title" format common on YouTube videos
+  let rawTitle = params.title;
+  let rawArtist = params.artist;
+  if (rawTitle.includes(" - ")) {
+    const [maybeArtist, ...rest] = rawTitle.split(" - ");
+    if (maybeArtist && rest.length > 0 && maybeArtist.length < 40) {
+      rawTitle = rest.join(" - ");
+      if (!rawArtist || /vevo|topic|official|7clouds|ncs|channel/i.test(rawArtist)) {
+        rawArtist = maybeArtist;
+      }
+    }
+  }
+
+  const cleanTitle = cleanTrackTitle(rawTitle) || params.title;
+  const cleanArtist = cleanArtistName(rawArtist) || params.artist;
 
   try {
     // 1. Exact lookup via LRCLIB /api/get
     const getUrl = new URL("https://lrclib.net/api/get");
-    getUrl.searchParams.set("track_name", cleanTitle || params.title);
-    getUrl.searchParams.set("artist_name", cleanArtist || params.artist);
+    getUrl.searchParams.set("track_name", cleanTitle);
+    getUrl.searchParams.set("artist_name", cleanArtist);
     if (params.duration && params.duration > 0) {
       getUrl.searchParams.set("duration", String(Math.round(params.duration)));
     }
 
     const res = await fetch(getUrl.toString(), {
       headers: {
-        "User-Agent": "HnBeeMusic/1.0 (https://github.com/hnbeemusic)",
+        "User-Agent": "HnBeeMusic/1.0 (https://github.com/HnguynbeeIT/HnBeeMusic)",
       },
       next: { revalidate: 86400 },
     });
@@ -95,29 +126,37 @@ export async function fetchLyrics(params: {
     }
 
     // 2. Fuzzy search fallback via LRCLIB /api/search
-    const searchUrl = new URL("https://lrclib.net/api/search");
-    searchUrl.searchParams.set("q", `${cleanArtist} ${cleanTitle}`.trim());
+    const searchQueries = [
+      `${cleanTitle} ${cleanArtist}`.trim(),
+      cleanTitle,
+    ];
 
-    const searchRes = await fetch(searchUrl.toString(), {
-      headers: {
-        "User-Agent": "HnBeeMusic/1.0 (https://github.com/hnbeemusic)",
-      },
-      next: { revalidate: 86400 },
-    });
+    for (const q of searchQueries) {
+      const searchUrl = new URL("https://lrclib.net/api/search");
+      searchUrl.searchParams.set("q", q);
 
-    if (searchRes.ok) {
-      const list = (await searchRes.json()) as LrcLibResponse[];
-      const withSynced = list.find((item) => Boolean(item.syncedLyrics));
-      const best = withSynced || list[0];
-      if (best) {
-        const synced = best.syncedLyrics ? parseLrc(best.syncedLyrics) : [];
-        if (synced.length > 0 || best.plainLyrics || best.instrumental) {
-          return {
-            synced,
-            plain: best.plainLyrics?.trim() || null,
-            instrumental: Boolean(best.instrumental),
-            source: "lrclib",
-          };
+      const searchRes = await fetch(searchUrl.toString(), {
+        headers: {
+          "User-Agent":
+            "HnBeeMusic/1.0 (https://github.com/HnguynbeeIT/HnBeeMusic)",
+        },
+        next: { revalidate: 86400 },
+      });
+
+      if (searchRes.ok) {
+        const list = (await searchRes.json()) as LrcLibResponse[];
+        const withSynced = list.find((item) => Boolean(item.syncedLyrics));
+        const best = withSynced || list[0];
+        if (best) {
+          const synced = best.syncedLyrics ? parseLrc(best.syncedLyrics) : [];
+          if (synced.length > 0 || best.plainLyrics || best.instrumental) {
+            return {
+              synced,
+              plain: best.plainLyrics?.trim() || null,
+              instrumental: Boolean(best.instrumental),
+              source: "lrclib",
+            };
+          }
         }
       }
     }
