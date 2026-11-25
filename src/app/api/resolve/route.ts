@@ -179,10 +179,15 @@ export async function POST(request: NextRequest) {
       byokCredentials
     );
     if (!resolved || resolved.tracks.length === 0) {
+      const hasSpotifyKey = Boolean(
+        (spIdHeader && spSecretHeader) ||
+          (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET)
+      );
       return NextResponse.json(
         {
-          error:
-            "Không thể lấy metadata từ Spotify. Hãy nhập Spotify Client ID & Secret trong API Settings hoặc .env.local.",
+          error: hasSpotifyKey
+            ? "Không thể tải danh sách từ link Spotify này. Link có thể không tồn tại hoặc Playlist đang ở chế độ Riêng tư (Private)."
+            : "Không thể tải nội dung từ link Spotify này (Playlist có thể đang ở chế độ Riêng tư hoặc chưa cấu hình Spotify API Key trong Settings).",
         },
         { status: 404 }
       );
