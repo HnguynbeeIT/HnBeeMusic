@@ -127,7 +127,7 @@ function normalizeArtistStrict(raw: string): string {
     .trim()
     .replace(/\s*-\s*Topic$/i, "")
     .replace(/VEVO$/i, "")
-    .replace(/\b(official|music|channel)\b/gi, "")
+    .replace(/\b(official|offical|music|channel)\b/gi, "")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
@@ -590,13 +590,14 @@ export async function fetchUnifiedArtist(params: {
   const spAvatar = spData.artist?.images?.[0]?.url || "";
   const ytAvatar = ytData.channel?.avatar || "";
 
+  // Prefer Spotify official artist profile when 100% exact-matched (unifies Spotify + YouTube Official Artist Channel)
   let primarySource: TrackSource = "youtube";
-  if (preferredSource === "youtube" && ytData.channel) {
+  if (spData.artist) {
+    primarySource = "spotify";
+  } else if (preferredSource === "youtube" && ytData.channel) {
     primarySource = "youtube";
   } else if (preferredSource === "soundcloud" && scData.user) {
     primarySource = "soundcloud";
-  } else if (spData.artist) {
-    primarySource = "spotify";
   } else if (ytData.channel) {
     primarySource = "youtube";
   } else if (scData.user) {
@@ -606,12 +607,9 @@ export async function fetchUnifiedArtist(params: {
   }
 
   const avatar =
-    (primarySource === "youtube" ? ytAvatar : "") ||
-    (primarySource === "soundcloud" ? scAvatar : "") ||
-    (primarySource === "spotify" ? spAvatar : "") ||
+    spAvatar ||
     ytAvatar ||
     scAvatar ||
-    spAvatar ||
     spData.tracks[0]?.thumbnail ||
     ytData.tracks[0]?.thumbnail ||
     scData.tracks[0]?.thumbnail ||
@@ -632,29 +630,30 @@ export async function fetchUnifiedArtist(params: {
     externalUrls.soundcloud = scData.user.permalink_url;
   }
 
-  // Always preserve exact artist display name clicked by the user (e.g. "Guyn Official" / "Guyn")
-  const displayName = queryName || spData.artist?.name || ytData.channel?.title || scData.user?.username || "Artist";
+  // Canonical unified artist display name (strip Official/Topic suffix when unified with Spotify)
+  const displayName =
+    (spData.artist && spData.artist.name) ||
+    queryName.replace(/\s+\b(official|offical)\b$/i, "").trim() ||
+    queryName;
 
   const profile: ArtistProfile = {
     id:
-      (primarySource === "youtube" && ytData.channel ? `yt:${ytData.channel.id}` : "") ||
-      (primarySource === "spotify" && spData.artist ? `sp:${spData.artist.id}` : "") ||
-      (primarySource === "soundcloud" && scData.user ? `sc:${scData.user.id}` : "") ||
+      (spData.artist ? `sp:${spData.artist.id}` : "") ||
+      (ytData.channel ? `yt:${ytData.channel.id}` : "") ||
+      (scData.user ? `sc:${scData.user.id}` : "") ||
       `artist:${normalizeName(queryName)}`,
     name: displayName,
     avatar,
     banner,
     genres: spData.artist?.genres?.slice(0, 4) ?? [],
     followers:
-      (primarySource === "youtube" ? ytData.channel?.subscribers : undefined) ??
-      (primarySource === "spotify" ? spData.artist?.followers?.total : undefined) ??
-      (primarySource === "soundcloud" ? scData.user?.followers_count : undefined) ??
       spData.artist?.followers?.total ??
       ytData.channel?.subscribers ??
       scData.user?.followers_count,
     popularity: spData.artist?.popularity,
     verified: Boolean(
-      (spData.artist && (spData.artist.followers?.total ?? 0) > 1000) ||
+      (spData.artist && (spData.albums.length > 0 || spData.tracks.length > 0)) ||
+        (spData.artist && ytData.channel) ||
         scData.user?.verified ||
         (ytData.channel?.subscribers ?? 0) > 10000
     ),
