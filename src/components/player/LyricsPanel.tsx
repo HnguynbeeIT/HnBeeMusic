@@ -11,6 +11,7 @@ import {
   getSourceTheme,
 } from "@/lib/ui/source-theme";
 import { SourceBadge } from "@/components/track/SourceBadge";
+import { ArtistLink } from "@/components/artist/ArtistLink";
 
 export function LyricsPanel() {
   const isOpen = usePlayerStore((s) => s.isLyricsOpen);
@@ -158,9 +159,15 @@ export function LyricsPanel() {
                 </div>
               ) : lyrics?.synced && lyrics.synced.length > 0 ? (
                 <div className="space-y-4 pb-24 pt-2">
-                  <div className="mb-4 flex items-center justify-between">
-                    <span className="text-xs text-zinc-400">
-                      {currentTrack.artist} · Bấm vào dòng bất kỳ để tua
+                  <div className="mb-4 flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-400">
+                      <ArtistLink
+                        name={currentTrack.artist}
+                        source={currentTrack.source}
+                        onNavigate={() => setLyricsOpen(false)}
+                        className="text-zinc-300"
+                      />
+                      <span className="shrink-0">· Bấm vào dòng để tua</span>
                     </span>
                     <SourceBadge
                       source={currentTrack.source}

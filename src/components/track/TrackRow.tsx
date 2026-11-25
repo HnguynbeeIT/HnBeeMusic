@@ -23,6 +23,7 @@ import { usePlaylistStore } from "@/store/usePlaylistStore";
 import { SourceBadge } from "./SourceBadge";
 import { TrackThumbnail } from "./TrackThumbnail";
 import { AudioEqualizer } from "./AudioEqualizer";
+import { ArtistLink } from "@/components/artist/ArtistLink";
 
 interface TrackRowProps {
   track: UnifiedTrack;
@@ -138,7 +139,11 @@ export function TrackRow({ track, index, contextQueue }: TrackRowProps) {
           {track.title}
         </p>
         <div className="mt-0.5 flex items-center gap-2">
-          <p className="truncate text-xs text-zinc-400">{track.artist}</p>
+          <ArtistLink
+            name={track.artist}
+            source={track.source}
+            className="text-xs text-zinc-400"
+          />
         </div>
       </div>
 

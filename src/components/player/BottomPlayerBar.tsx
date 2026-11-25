@@ -26,6 +26,7 @@ import {
 } from "@/lib/ui/source-theme";
 import { SourceBadge } from "@/components/track/SourceBadge";
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
+import { ArtistLink } from "@/components/artist/ArtistLink";
 import { SeekBar } from "./SeekBar";
 
 export function BottomPlayerBar() {
@@ -123,9 +124,11 @@ export function BottomPlayerBar() {
                   {currentTrack.title}
                 </p>
                 <div className="flex items-center gap-1.5">
-                  <p className="truncate text-xs text-zinc-400">
-                    {currentTrack.artist}
-                  </p>
+                  <ArtistLink
+                    name={currentTrack.artist}
+                    source={currentTrack.source}
+                    className="text-xs text-zinc-400"
+                  />
                   <SourceBadge
                     source={currentTrack.source}
                     resolvedSource={currentTrack.resolvedSource}
@@ -198,9 +201,11 @@ export function BottomPlayerBar() {
                   </p>
                 </div>
                 <div className="mt-1 flex items-center gap-2">
-                  <p className="truncate text-xs text-zinc-400">
-                    {currentTrack.artist}
-                  </p>
+                  <ArtistLink
+                    name={currentTrack.artist}
+                    source={currentTrack.source}
+                    className="text-xs text-zinc-400"
+                  />
                   <SourceBadge
                     source={currentTrack.source}
                     resolvedSource={currentTrack.resolvedSource}

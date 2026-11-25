@@ -16,6 +16,7 @@ import {
 import { usePlayerStore } from "./usePlayerStore";
 import { useSettingsStore } from "./useSettingsStore";
 import { usePlaylistStore } from "./usePlaylistStore";
+import { useArtistStore } from "./useArtistStore";
 
 interface LocalAccountRecord {
   id: string;
@@ -270,6 +271,7 @@ export const useAuthStore = create<AuthState>()(
           user,
           likedTracks: player.likedTracks,
           playlists: playlistStore.playlists,
+          followedArtists: useArtistStore.getState().followedArtists,
           playerPrefs: {
             volume: player.volume,
             repeatMode: player.repeatMode,
@@ -302,6 +304,10 @@ export const useAuthStore = create<AuthState>()(
 
           if (Array.isArray(parsed.playlists)) {
             usePlaylistStore.getState().setPlaylists(parsed.playlists);
+          }
+
+          if (Array.isArray(parsed.followedArtists)) {
+            useArtistStore.getState().setFollowedArtists(parsed.followedArtists);
           }
 
           if (parsed.playerPrefs) {

@@ -11,6 +11,7 @@ import {
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { SourceBadge } from "@/components/track/SourceBadge";
 import { AudioEqualizer } from "@/components/track/AudioEqualizer";
+import { ArtistLink } from "@/components/artist/ArtistLink";
 
 export function QueueDrawer() {
   const isOpen = usePlayerStore((s) => s.isQueueOpen);
@@ -120,9 +121,12 @@ export function QueueDrawer() {
                             </p>
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5">
-                            <p className="truncate text-[11px] text-zinc-400">
-                              {track.artist}
-                            </p>
+                            <ArtistLink
+                              name={track.artist}
+                              source={track.source}
+                              onNavigate={() => setQueueOpen(false)}
+                              className="text-[11px] text-zinc-400"
+                            />
                             <SourceBadge
                               source={track.source}
                               resolvedSource={track.resolvedSource}
