@@ -70,6 +70,7 @@ interface ArtistPageClientProps {
 
 export function ArtistPageClient({
   artistName,
+  initialSource,
   artistId,
 }: ArtistPageClientProps) {
   const [data, setData] = useState<UnifiedArtistResponse | null>(null);
@@ -96,6 +97,13 @@ export function ArtistPageClient({
 
     const params = new URLSearchParams({ name: artistName, source: "all" });
     if (artistId) params.set("id", artistId);
+    if (
+      initialSource === "youtube" ||
+      initialSource === "spotify" ||
+      initialSource === "soundcloud"
+    ) {
+      params.set("preferredSource", initialSource);
+    }
 
     fetch(`/api/artist?${params.toString()}`, {
       signal: controller.signal,
@@ -117,7 +125,7 @@ export function ArtistPageClient({
       });
 
     return () => controller.abort();
-  }, [artistName, artistId, byokVersion]);
+  }, [artistName, artistId, initialSource, byokVersion]);
 
   const displayedTracks = useMemo<UnifiedTrack[]>(() => {
     if (!data?.tracks) return [];
