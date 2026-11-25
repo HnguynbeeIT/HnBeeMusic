@@ -8,6 +8,7 @@ import { AudioEngineManager } from "@/components/player/AudioEngineManager";
 import { BottomPlayerBar } from "@/components/player/BottomPlayerBar";
 import { QueueDrawer } from "@/components/player/QueueDrawer";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
+import { FullScreenLyricsModal } from "@/components/player/FullScreenLyricsModal";
 import { FullScreenPlayerModal } from "@/components/player/FullScreenPlayerModal";
 import { ApiSettingsModal } from "@/components/settings/ApiSettingsModal";
 import { AuthModal } from "@/components/auth/AuthModal";
@@ -57,6 +58,7 @@ export default function RootLayout({
           <BottomPlayerBar />
           <QueueDrawer />
           <LyricsPanel />
+          <FullScreenLyricsModal />
           <FullScreenPlayerModal />
           <ApiSettingsModal />
           <AuthModal />

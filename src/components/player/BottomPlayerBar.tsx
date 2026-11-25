@@ -19,6 +19,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useLyricsStore } from "@/store/useLyricsStore";
 import {
   BUTTON_MOTION,
   SPRING_PHYSICS,
@@ -58,6 +59,8 @@ export function BottomPlayerBar() {
   const toggleLyricsOpen = usePlayerStore((s) => s.toggleLyricsOpen);
   const setFullPlayerOpen = usePlayerStore((s) => s.setFullPlayerOpen);
   const toggleLikeTrack = usePlayerStore((s) => s.toggleLikeTrack);
+  const hasLyrics = useLyricsStore((s) => s.hasLyrics);
+  const isFullScreenLyrics = useLyricsStore((s) => s.isFullScreenLyrics);
 
   const isLiked = currentTrack
     ? likedTracks.some((t) => t.id === currentTrack.id)
@@ -341,14 +344,24 @@ export function BottomPlayerBar() {
             {...BUTTON_MOTION}
             onClick={toggleLyricsOpen}
             aria-label="Lời bài hát"
-            title="Lời bài hát (Lyrics)"
-            className={`rounded-lg p-2 transition-colors ${
-              isLyricsOpen
-                ? `${theme.bgClass} ${theme.textClass}`
+            title={
+              hasLyrics
+                ? "Lời bài hát (Đã có lời đồng bộ)"
+                : "Lời bài hát (Lyrics)"
+            }
+            className={`relative rounded-lg p-2 transition-colors ${
+              isLyricsOpen || isFullScreenLyrics
+                ? `${theme.bgClass} ${theme.textClass} shadow-[0_0_16px_rgba(255,255,255,0.2)]`
                 : "text-zinc-400 hover:bg-white/10 hover:text-white"
             }`}
           >
             <MicVocal className="h-4 w-4" />
+            {hasLyrics && (
+              <span
+                aria-label="Có lời bài hát"
+                className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#1DB954]"
+              />
+            )}
           </motion.button>
 
           <motion.button
