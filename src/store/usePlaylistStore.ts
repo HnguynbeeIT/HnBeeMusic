@@ -23,13 +23,8 @@ interface PlaylistState {
   syncFromCloud: () => Promise<void>;
 }
 
-function pushPlaylistsToCloud(playlists: UserPlaylist[]) {
-  if (typeof window === "undefined") return;
-  fetch("/api/playlists", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ playlists }),
-  }).catch(() => {});
+function pushPlaylistsToCloud() {
+  // Unified 500ms debounced Cloud Sync is orchestrated by CloudSyncManager (/api/user/sync).
 }
 
 export const usePlaylistStore = create<PlaylistState>()(
@@ -49,7 +44,7 @@ export const usePlaylistStore = create<PlaylistState>()(
         };
         const next = [created, ...get().playlists];
         set({ playlists: next });
-        pushPlaylistsToCloud(next);
+        pushPlaylistsToCloud();
         return created;
       },
 
@@ -62,13 +57,13 @@ export const usePlaylistStore = create<PlaylistState>()(
             : pl
         );
         set({ playlists: next });
-        pushPlaylistsToCloud(next);
+        pushPlaylistsToCloud();
       },
 
       deletePlaylist: (id) => {
         const next = get().playlists.filter((pl) => pl.id !== id);
         set({ playlists: next });
-        pushPlaylistsToCloud(next);
+        pushPlaylistsToCloud();
       },
 
       addTrackToPlaylist: (playlistId, track) => {
@@ -82,7 +77,7 @@ export const usePlaylistStore = create<PlaylistState>()(
           };
         });
         set({ playlists: next });
-        pushPlaylistsToCloud(next);
+        pushPlaylistsToCloud();
       },
 
       removeTrackFromPlaylist: (playlistId, trackId) => {
@@ -95,12 +90,12 @@ export const usePlaylistStore = create<PlaylistState>()(
           };
         });
         set({ playlists: next });
-        pushPlaylistsToCloud(next);
+        pushPlaylistsToCloud();
       },
 
       setPlaylists: (playlists) => {
         set({ playlists });
-        pushPlaylistsToCloud(playlists);
+        pushPlaylistsToCloud();
       },
 
       syncFromCloud: async () => {

@@ -12,6 +12,7 @@ import { FullScreenLyricsModal } from "@/components/player/FullScreenLyricsModal
 import { FullScreenPlayerModal } from "@/components/player/FullScreenPlayerModal";
 import { ApiSettingsModal } from "@/components/settings/ApiSettingsModal";
 import { AuthModal } from "@/components/auth/AuthModal";
+import { CloudSyncManager } from "@/components/auth/CloudSyncManager";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -62,6 +63,7 @@ export default function RootLayout({
           <FullScreenPlayerModal />
           <ApiSettingsModal />
           <AuthModal />
+          <CloudSyncManager />
         </MotionProvider>
       </body>
     </html>

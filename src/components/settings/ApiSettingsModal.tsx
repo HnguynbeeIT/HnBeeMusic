@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
+  Cloud,
   ExternalLink,
   Eye,
   EyeOff,
   KeyRound,
+  RefreshCw,
   ShieldCheck,
   SkipForward,
   Trash2,
@@ -17,6 +19,7 @@ import {
   useSettingsStore,
   type ApiKeysConfig,
 } from "@/store/useSettingsStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { BUTTON_MOTION, SPRING_PHYSICS } from "@/lib/ui/source-theme";
 import { BrandLogo } from "@/components/BrandLogo";
 import { BrandCredit } from "@/components/BrandCredit";
@@ -32,6 +35,21 @@ export function ApiSettingsModal() {
   const setAutoSkipSponsor = useSettingsStore((s) => s.setAutoSkipSponsor);
   const saveKeys = useSettingsStore((s) => s.saveKeys);
   const clearKeys = useSettingsStore((s) => s.clearKeys);
+
+  const user = useAuthStore((s) => s.user);
+  const authMode = useAuthStore((s) => s.authMode);
+  const syncStatus = useAuthStore((s) => s.syncStatus);
+  const lastSyncedAt = useAuthStore((s) => s.lastSyncedAt);
+  const syncNow = useAuthStore((s) => s.syncNow);
+  const setAuthModalOpen = useAuthStore((s) => s.setAuthModalOpen);
+
+  const formattedLastSync = lastSyncedAt
+    ? new Date(lastSyncedAt).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : null;
 
   const [form, setForm] = useState<ApiKeysConfig>({
     youtubeApiKey: "",
@@ -302,6 +320,49 @@ export function ApiSettingsModal() {
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* Server Cloud Sync Status Card */}
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                    <Cloud className="h-3.5 w-3.5 text-emerald-400" />
+                    Server Cloud Sync
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-zinc-400">
+                    {user && authMode === "cloud"
+                      ? formattedLastSync
+                        ? `Đã đồng bộ (@${user.username}) • Last synced: ${formattedLastSync}`
+                        : `Đang đồng bộ tự động cho @${user.username}`
+                      : "Đăng nhập để đồng bộ Playlists, Liked Songs & Nghệ sĩ lên Server."}
+                  </p>
+                </div>
+                {user && authMode === "cloud" ? (
+                  <button
+                    type="button"
+                    disabled={syncStatus === "syncing"}
+                    onClick={() => void syncNow()}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${
+                        syncStatus === "syncing" ? "animate-spin" : ""
+                      }`}
+                    />
+                    Đồng bộ ngay
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      setAuthModalOpen(true);
+                    }}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+                  >
+                    Đăng nhập
+                  </button>
+                )}
               </div>
 
               {/* Footer Controls */}

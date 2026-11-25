@@ -6,9 +6,9 @@ import {
   Check,
   Cloud,
   Download,
-  HardDrive,
   Loader2,
   LogOut,
+  RefreshCw,
   Upload,
   UserPlus,
   X,
@@ -31,13 +31,34 @@ export function AuthModal() {
   const isOpen = useAuthStore((s) => s.isAuthModalOpen);
   const user = useAuthStore((s) => s.user);
   const authMode = useAuthStore((s) => s.authMode);
+  const syncStatus = useAuthStore((s) => s.syncStatus);
+  const lastSyncedAt = useAuthStore((s) => s.lastSyncedAt);
   const setAuthModalOpen = useAuthStore((s) => s.setAuthModalOpen);
   const register = useAuthStore((s) => s.register);
   const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
+  const syncNow = useAuthStore((s) => s.syncNow);
   const exportProfileJson = useAuthStore((s) => s.exportProfileJson);
   const importProfileJson = useAuthStore((s) => s.importProfileJson);
   const likedCount = usePlayerStore((s) => s.likedTracks.length);
+
+  const formattedLastSync = lastSyncedAt
+    ? new Date(lastSyncedAt).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : null;
+
+  const handleManualSync = async () => {
+    const ok = await syncNow();
+    setFeedback({
+      type: ok ? "success" : "error",
+      message: ok
+        ? "Đã đồng bộ toàn bộ Playlists, Liked Songs & Nghệ sĩ lên Server!"
+        : "Không thể đồng bộ lên Server lúc này.",
+    });
+  };
 
   const [tab, setTab] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
@@ -161,25 +182,14 @@ export function AuthModal() {
                   <h2 className="text-sm font-semibold text-white">
                     {user ? "Tài khoản HnBee Music" : "Đăng nhập nhanh"}
                   </h2>
-                  {/* Storage Mode Badge */}
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
-                      authMode === "cloud"
-                        ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-400"
-                        : "border-amber-400/25 bg-amber-500/10 text-amber-300"
-                    }`}
-                  >
-                    {authMode === "cloud" ? (
-                      <>
-                        <Cloud className="h-3 w-3" />
-                        Cloud DB Sync
-                      </>
-                    ) : (
-                      <>
-                        <HardDrive className="h-3 w-3" />
-                        Local Browser Profile
-                      </>
-                    )}
+                  {/* Server Cloud Sync Badge */}
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
+                    <Cloud className="h-3 w-3" />
+                    {syncStatus === "syncing"
+                      ? "Đang đồng bộ Server..."
+                      : authMode === "cloud"
+                      ? "Cloud Synced • Server DB"
+                      : "Server Cloud Sync Ready"}
                   </span>
                 </div>
               </div>
@@ -224,6 +234,45 @@ export function AuthModal() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Cloud Sync Status & Sync Now */}
+                  {authMode === "cloud" && (
+                    <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              syncStatus === "syncing"
+                                ? "animate-pulse bg-sky-400"
+                                : "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                            }`}
+                          />
+                          {syncStatus === "syncing"
+                            ? "Đang đồng bộ lên Server..."
+                            : "Cloud Synced • Đã đồng bộ Server"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-zinc-400">
+                          {formattedLastSync
+                            ? `Last synced: ${formattedLastSync}`
+                            : "Tự động đồng bộ theo thời gian thực"}
+                        </p>
+                      </div>
+                      <motion.button
+                        type="button"
+                        {...BUTTON_MOTION}
+                        disabled={syncStatus === "syncing"}
+                        onClick={handleManualSync}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          className={`h-3.5 w-3.5 ${
+                            syncStatus === "syncing" ? "animate-spin" : ""
+                          }`}
+                        />
+                        Sync Now
+                      </motion.button>
+                    </div>
+                  )}
 
                   {/* Export / Import Profile (.json) */}
                   <div className="space-y-2">
