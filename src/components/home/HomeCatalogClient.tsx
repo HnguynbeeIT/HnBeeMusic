@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpRight,
   BadgeCheck,
@@ -12,13 +12,21 @@ import {
   Search,
   Shuffle,
   Sparkles,
+  Users,
   X,
 } from "lucide-react";
-import type { SearchResponse, TrackSource, UnifiedTrack } from "@/lib/audio/types";
-import type { ArtistRegion } from "@/lib/audio/region";
+import type {
+  ArtistSearchItem,
+  SearchResponse,
+  TrackSource,
+  UnifiedTrack,
+} from "@/lib/audio/types";
+import { REGIONS, type ArtistRegion } from "@/lib/audio/region";
 import { DIRECTORY_ARTISTS } from "@/config/verified-artists";
 import { useRegion } from "@/context/RegionContext";
 import { RegionSelector } from "@/components/layout/RegionSelector";
+import { ArtistCard } from "@/components/artist/ArtistCard";
+import { buildArtistHref } from "@/components/artist/ArtistLink";
 import {
   BUTTON_MOTION,
   SPRING_PHYSICS,
@@ -66,9 +74,12 @@ const ARTIST_REGION_TABS: Array<{
 export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
   const { region } = useRegion();
   const [filter, setFilter] = useState<FilterValue>("all");
+  const [resultType, setResultType] = useState<"all" | "tracks" | "artists">("all");
   const [artistTab, setArtistTab] = useState<ArtistRegion>("VN");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [liveResults, setLiveResults] = useState<UnifiedTrack[] | null>(null);
+  const [liveArtists, setLiveArtists] = useState<ArtistSearchItem[]>([]);
   const [searching, setSearching] = useState(false);
 
   // Sync artist directory tab when user switches global region selector
@@ -96,6 +107,7 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
   useEffect(() => {
     if (!isSearchActive) {
       setLiveResults(null);
+      setLiveArtists([]);
       setSearching(false);
       return;
     }
@@ -116,10 +128,12 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
       .then((res) => res.json())
       .then((data: SearchResponse) => {
         setLiveResults(data.tracks ?? []);
+        setLiveArtists(data.artists ?? []);
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setLiveResults([]);
+        setLiveArtists([]);
       })
       .finally(() => {
         if (!controller.signal.aborted) setSearching(false);
@@ -358,8 +372,13 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm trực tiếp Spotify, YouTube, SoundCloud..."
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 180)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSearchFocused(true);
+                }}
+                placeholder="Tìm bài hát, nghệ sĩ hoặc dán link Artist..."
                 className="w-full rounded-full border border-white/10 bg-zinc-900/60 py-2 pl-10 pr-9 text-xs text-white placeholder:text-zinc-500 backdrop-blur-xl focus:border-white/25 focus:outline-none"
               />
               {searchQuery && (
@@ -372,6 +391,59 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
+
+              {/* Instant Search Artist Dropdown (Top 3) */}
+              <AnimatePresence>
+                {searchFocused &&
+                  searchQuery.trim().length >= 2 &&
+                  liveArtists.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 6 }}
+                      transition={SPRING_PHYSICS}
+                      className="absolute inset-x-0 top-11 z-40 overflow-hidden rounded-2xl border border-white/15 bg-zinc-900/95 p-1.5 shadow-2xl shadow-black/70 backdrop-blur-2xl"
+                    >
+                      <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                        Gợi ý Nghệ sĩ
+                      </p>
+                      {liveArtists.slice(0, 3).map((artist) => {
+                        const reg = REGIONS[artist.region];
+                        return (
+                          <Link
+                            key={artist.id}
+                            href={buildArtistHref(
+                              artist.name,
+                              artist.source,
+                              artist.artistId
+                            )}
+                            className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/10"
+                          >
+                            <TrackThumbnail
+                              src={artist.avatar}
+                              alt={artist.name}
+                              className="h-8 w-8 rounded-full"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1">
+                                <span className="truncate text-xs font-semibold text-white">
+                                  {artist.name}
+                                </span>
+                                {artist.verified && (
+                                  <BadgeCheck className="h-3 w-3 shrink-0 text-sky-400" />
+                                )}
+                              </div>
+                              <p className="truncate text-[10px] text-zinc-400">
+                                {reg.flag} {reg.shortLabel} &bull;{" "}
+                                {artist.language}
+                              </p>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+              </AnimatePresence>
             </div>
             <RegionSelector />
           </div>
@@ -406,36 +478,117 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
           </div>
         </div>
 
-        {/* Skeleton Loader or Staggered Track List */}
+        {/* Result Type Tabs when searching */}
+        {isSearchActive && (
+          <div className="flex items-center gap-2">
+            {(
+              [
+                { id: "all", label: "Tất cả" },
+                { id: "tracks", label: "Bài hát" },
+                { id: "artists", label: `Nghệ sĩ (${liveArtists.length})` },
+              ] as const
+            ).map((t) => {
+              const active = resultType === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setResultType(t.id)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                    active
+                      ? "bg-white text-zinc-950"
+                      : "border border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Skeleton Loader or Artists + Track List */}
         {searching ? (
           <TrackSkeleton count={6} />
-        ) : displayedTracks.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-10 text-center backdrop-blur-xl">
-            <p className="text-sm font-medium text-zinc-300">
-              Không tìm thấy kết quả cho &ldquo;{debouncedQuery}&rdquo;
-            </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              Thử từ khóa khác, chọn nguồn khác hoặc nhập API Key cá nhân trong
-              API Settings.
-            </p>
-          </div>
+        ) : isSearchActive && resultType === "artists" ? (
+          liveArtists.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-10 text-center backdrop-blur-xl">
+              <p className="text-sm font-medium text-zinc-300">
+                Không tìm thấy nghệ sĩ cho &ldquo;{debouncedQuery}&rdquo;
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {liveArtists.map((artist) => (
+                <ArtistCard key={artist.id} artist={artist} variant="grid" />
+              ))}
+            </div>
+          )
         ) : (
-          <motion.div
-            key={`${filter}-${debouncedQuery}`}
-            variants={listContainerVariants}
-            initial="hidden"
-            animate="visible"
-            className="space-y-1 rounded-2xl border border-white/10 bg-zinc-900/40 p-2 backdrop-blur-xl"
-          >
-            {displayedTracks.map((track, idx) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={idx}
-                contextQueue={displayedTracks}
-              />
-            ))}
-          </motion.div>
+          <div className="space-y-4">
+            {isSearchActive &&
+              resultType === "all" &&
+              liveArtists.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
+                      <Users className="h-3.5 w-3.5 text-zinc-400" />
+                      Nghệ sĩ ({liveArtists.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setResultType("artists")}
+                      className="text-[11px] text-zinc-400 hover:text-white"
+                    >
+                      Xem tất cả →
+                    </button>
+                  </div>
+                  <div className="flex gap-3 overflow-x-auto pb-1">
+                    {liveArtists.map((artist) => (
+                      <ArtistCard
+                        key={artist.id}
+                        artist={artist}
+                        variant="strip"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            {displayedTracks.length === 0 &&
+            (!isSearchActive ||
+              resultType === "tracks" ||
+              liveArtists.length === 0) ? (
+              <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-10 text-center backdrop-blur-xl">
+                <p className="text-sm font-medium text-zinc-300">
+                  Không tìm thấy kết quả cho &ldquo;{debouncedQuery}&rdquo;
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Thử từ khóa khác, chọn nguồn khác hoặc nhập API Key cá nhân
+                  trong API Settings.
+                </p>
+              </div>
+            ) : (
+              displayedTracks.length > 0 && (
+                <motion.div
+                  key={`${filter}-${debouncedQuery}`}
+                  variants={listContainerVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="space-y-1 rounded-2xl border border-white/10 bg-zinc-900/40 p-2 backdrop-blur-xl"
+                >
+                  {displayedTracks.map((track, idx) => (
+                    <TrackRow
+                      key={track.id}
+                      track={track}
+                      index={idx}
+                      contextQueue={displayedTracks}
+                    />
+                  ))}
+                </motion.div>
+              )
+            )}
+          </div>
         )}
       </section>
     </div>

@@ -9,6 +9,7 @@ import {
 import { searchYouTube } from "@/lib/adapters/youtube";
 import { searchSoundCloud } from "@/lib/adapters/soundcloud";
 import { searchSpotify } from "@/lib/adapters/spotify";
+import { searchArtists } from "@/lib/adapters/artist-search";
 import { searchFallbackCatalog } from "@/lib/adapters/fallback-catalog";
 
 export const maxDuration = 30;
@@ -36,7 +37,7 @@ async function executeSearch(
   const wantSc = source === "all" || source === "soundcloud";
   const wantSp = source === "all" || source === "spotify";
 
-  const [ytTracks, scTracks, spTracks] = await Promise.all([
+  const [ytTracks, scTracks, spTracks, artists] = await Promise.all([
     wantYt && hasYtKey
       ? searchYouTube(query, 8, ytKey, region)
       : Promise.resolve([]),
@@ -51,6 +52,12 @@ async function executeSearch(
           region
         )
       : Promise.resolve([]),
+    searchArtists(query, source, region, {
+      youtubeApiKey: ytKey,
+      spotifyClientId: spId,
+      spotifyClientSecret: spSecret,
+      soundcloudClientId: byok?.soundcloudClientId,
+    }),
   ]);
 
   const merged: UnifiedTrack[] = sortTracksByRegion(
@@ -58,9 +65,10 @@ async function executeSearch(
     region
   );
 
-  if (merged.length === 0) {
+  if (merged.length === 0 && artists.length === 0) {
     return {
       tracks: searchFallbackCatalog(query, source),
+      artists: [],
       sources: {
         youtube: hasYtKey ? "live" : "fallback",
         soundcloud: "fallback",
@@ -71,6 +79,7 @@ async function executeSearch(
 
   return {
     tracks: merged,
+    artists,
     sources: {
       youtube: hasYtKey ? "live" : "fallback",
       soundcloud: scTracks.length > 0 ? "live" : "fallback",
@@ -89,7 +98,7 @@ const runCachedSearch = unstable_cache(
     const res = await executeSearch(query, source, region);
     return { ...res, cached: true };
   },
-  ["hnbee-multi-source-search-v4"],
+  ["hnbee-multi-source-search-v5"],
   { revalidate: 1800 }
 );
 
