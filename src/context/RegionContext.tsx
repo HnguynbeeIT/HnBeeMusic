@@ -38,6 +38,22 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
         setRegionState(parseRegionCode(saved));
       }
     } catch {}
+
+    const handleCloudRegionSync = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail) {
+        const parsed = parseRegionCode(detail);
+        setRegionState(parsed);
+        try {
+          window.localStorage.setItem(STORAGE_KEY, parsed);
+        } catch {}
+      }
+    };
+
+    window.addEventListener("hnbee:region-sync", handleCloudRegionSync);
+    return () => {
+      window.removeEventListener("hnbee:region-sync", handleCloudRegionSync);
+    };
   }, []);
 
   const setRegion = (code: RegionCode) => {

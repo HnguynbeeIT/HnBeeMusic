@@ -8,6 +8,7 @@ import type {
   AuthUser,
   ProfileBackupJson,
 } from "@/lib/auth/types";
+import type { UnifiedTrack } from "@/lib/audio/types";
 import {
   normalizeUsername,
   validatePassword,
@@ -15,8 +16,10 @@ import {
 } from "@/lib/auth/validation";
 import { usePlayerStore } from "./usePlayerStore";
 import { useSettingsStore } from "./useSettingsStore";
-import { usePlaylistStore } from "./usePlaylistStore";
-import { useArtistStore } from "./useArtistStore";
+import { usePlaylistStore, type UserPlaylist } from "./usePlaylistStore";
+import { useArtistStore, type FollowedArtist } from "./useArtistStore";
+
+export type SyncStatus = "idle" | "syncing" | "synced" | "error";
 
 interface LocalAccountRecord {
   id: string;
@@ -36,10 +39,16 @@ interface AuthState {
   authMode: AuthMode;
   initialized: boolean;
   isAuthModalOpen: boolean;
+  isHydrating: boolean;
+  syncStatus: SyncStatus;
+  lastSyncedAt: string | null;
   localAccounts: LocalAccountRecord[];
 
   setAuthModalOpen: (open: boolean) => void;
   initAuth: () => Promise<void>;
+  hydrateFromServer: () => Promise<void>;
+  migrateAndSyncOnAuth: () => Promise<void>;
+  syncNow: (regionOverride?: string) => Promise<boolean>;
   register: (params: {
     username: string;
     displayName?: string;
@@ -52,6 +61,23 @@ interface AuthState {
   logout: () => Promise<void>;
   exportProfileJson: () => string;
   importProfileJson: (raw: string) => AuthActionResult;
+}
+
+function getLocalRegion(): string {
+  if (typeof window === "undefined") return "VN";
+  try {
+    return window.localStorage.getItem("hnbeemusic-region") || "VN";
+  } catch {
+    return "VN";
+  }
+}
+
+function applySyncedRegion(region?: string) {
+  if (typeof window === "undefined" || !region) return;
+  try {
+    window.localStorage.setItem("hnbeemusic-region", region);
+    window.dispatchEvent(new CustomEvent("hnbee:region-sync", { detail: region }));
+  } catch {}
 }
 
 async function hashLocalPassword(
@@ -73,12 +99,155 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      authMode: "local",
+      authMode: "cloud",
       initialized: false,
       isAuthModalOpen: false,
+      isHydrating: false,
+      syncStatus: "idle",
+      lastSyncedAt: null,
       localAccounts: [],
 
       setAuthModalOpen: (open) => set({ isAuthModalOpen: open }),
+
+      hydrateFromServer: async () => {
+        set({ isHydrating: true, syncStatus: "syncing" });
+        try {
+          const res = await fetch("/api/user/sync", { cache: "no-store" });
+          if (!res.ok) {
+            set({ isHydrating: false, syncStatus: "error" });
+            return;
+          }
+          const data = (await res.json()) as {
+            synced?: boolean;
+            profile?: { region?: string };
+            playlists?: UserPlaylist[];
+            likedTracks?: UnifiedTrack[];
+            followedArtists?: FollowedArtist[];
+            syncedAt?: string;
+          };
+
+          if (data.synced) {
+            if (Array.isArray(data.playlists)) {
+              usePlaylistStore.setState({ playlists: data.playlists });
+            }
+            if (Array.isArray(data.likedTracks)) {
+              usePlayerStore.setState({ likedTracks: data.likedTracks });
+            }
+            if (Array.isArray(data.followedArtists)) {
+              useArtistStore.setState({ followedArtists: data.followedArtists });
+            }
+            if (data.profile?.region) {
+              applySyncedRegion(data.profile.region);
+            }
+            set({
+              syncStatus: "synced",
+              lastSyncedAt: data.syncedAt || new Date().toISOString(),
+            });
+          }
+        } catch {
+          set({ syncStatus: "error" });
+        } finally {
+          set({ isHydrating: false });
+        }
+      },
+
+      migrateAndSyncOnAuth: async () => {
+        set({ isHydrating: true, syncStatus: "syncing" });
+        try {
+          const localPlaylists = usePlaylistStore.getState().playlists;
+          const localLiked = usePlayerStore.getState().likedTracks;
+          const localArtists = useArtistStore.getState().followedArtists;
+          const localRegion = getLocalRegion();
+
+          const res = await fetch("/api/user/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              merge: true,
+              region: localRegion,
+              playlists: localPlaylists,
+              likedTracks: localLiked,
+              followedArtists: localArtists,
+            }),
+          });
+
+          if (!res.ok) {
+            set({ syncStatus: "error" });
+            return;
+          }
+
+          const data = (await res.json()) as {
+            synced?: boolean;
+            syncedAt?: string;
+            playlists?: UserPlaylist[];
+            likedTracks?: UnifiedTrack[];
+            followedArtists?: FollowedArtist[];
+            region?: string;
+          };
+
+          if (data.synced) {
+            if (Array.isArray(data.playlists)) {
+              usePlaylistStore.setState({ playlists: data.playlists });
+            }
+            if (Array.isArray(data.likedTracks)) {
+              usePlayerStore.setState({ likedTracks: data.likedTracks });
+            }
+            if (Array.isArray(data.followedArtists)) {
+              useArtistStore.setState({ followedArtists: data.followedArtists });
+            }
+            if (data.region) {
+              applySyncedRegion(data.region);
+            }
+            set({
+              syncStatus: "synced",
+              lastSyncedAt: data.syncedAt || new Date().toISOString(),
+            });
+          }
+        } catch {
+          set({ syncStatus: "error" });
+        } finally {
+          set({ isHydrating: false });
+        }
+      },
+
+      syncNow: async (regionOverride?: string) => {
+        const { user, authMode } = get();
+        if (!user || authMode !== "cloud") return false;
+
+        set({ syncStatus: "syncing" });
+        try {
+          const res = await fetch("/api/user/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              region: regionOverride || getLocalRegion(),
+              playlists: usePlaylistStore.getState().playlists,
+              likedTracks: usePlayerStore.getState().likedTracks,
+              followedArtists: useArtistStore.getState().followedArtists,
+            }),
+          });
+          if (!res.ok) {
+            set({ syncStatus: "error" });
+            return false;
+          }
+          const data = (await res.json()) as {
+            synced?: boolean;
+            syncedAt?: string;
+          };
+          if (data.synced) {
+            set({
+              syncStatus: "synced",
+              lastSyncedAt: data.syncedAt || new Date().toISOString(),
+            });
+            return true;
+          }
+          set({ syncStatus: "error" });
+          return false;
+        } catch {
+          set({ syncStatus: "error" });
+          return false;
+        }
+      },
 
       initAuth: async () => {
         if (get().initialized) return;
@@ -92,10 +261,9 @@ export const useAuthStore = create<AuthState>()(
               initialized: true,
             });
             if (data.user) {
-              void usePlaylistStore.getState().syncFromCloud();
+              await get().hydrateFromServer();
             }
           } else {
-            // Preserve local persisted user if already signed in locally
             const current = get().user;
             set({
               authMode: "local",
@@ -143,10 +311,11 @@ export const useAuthStore = create<AuthState>()(
 
           if (data.mode === "cloud" && data.user) {
             set({ authMode: "cloud", user: data.user });
+            await get().migrateAndSyncOnAuth();
             return { ok: true };
           }
 
-          // Local Account Mode (no DATABASE_URL)
+          // Fallback Local Account Mode (self-hosted Open Source without DB)
           const accounts = get().localAccounts;
           if (accounts.some((acc) => acc.username === username)) {
             return {
@@ -217,10 +386,11 @@ export const useAuthStore = create<AuthState>()(
 
           if (data.mode === "cloud" && data.user) {
             set({ authMode: "cloud", user: data.user });
+            await get().migrateAndSyncOnAuth();
             return { ok: true };
           }
 
-          // Local Account Mode verification
+          // Fallback Local Account Mode verification
           const record = get().localAccounts.find(
             (acc) => acc.username === username
           );
@@ -256,7 +426,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           await fetch("/api/auth/logout", { method: "POST" });
         } catch {}
-        set({ user: null });
+        set({ user: null, syncStatus: "idle", lastSyncedAt: null });
       },
 
       exportProfileJson: () => {
@@ -335,13 +505,8 @@ export const useAuthStore = create<AuthState>()(
             });
           }
 
-          if (parsed.user && get().authMode === "local") {
-            set({
-              user: {
-                ...parsed.user,
-                mode: "local",
-              },
-            });
+          if (get().user && get().authMode === "cloud") {
+            void get().syncNow();
           }
 
           return { ok: true };
@@ -358,6 +523,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user?.mode === "local" ? state.user : null,
         localAccounts: state.localAccounts,
+        lastSyncedAt: state.lastSyncedAt,
       }),
     }
   )

@@ -61,6 +61,7 @@ export function Sidebar() {
 
   const user = useAuthStore((s) => s.user);
   const authMode = useAuthStore((s) => s.authMode);
+  const syncStatus = useAuthStore((s) => s.syncStatus);
   const initAuth = useAuthStore((s) => s.initAuth);
   const setAuthModalOpen = useAuthStore((s) => s.setAuthModalOpen);
   const userPlaylists = usePlaylistStore((s) => s.playlists);
@@ -278,7 +279,7 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Bottom Zero-Verification Auth Trigger / Profile Card */}
+        {/* Bottom Server Cloud Sync Profile Card */}
         <div className="mt-3 border-t border-white/10 pt-3">
           <motion.button
             type="button"
@@ -295,18 +296,32 @@ export function Sidebar() {
                   <p className="truncate text-xs font-semibold text-white">
                     {user.displayName}
                   </p>
-                  <p className="truncate font-mono text-[10px] text-zinc-400">
-                    @{user.username}
+                  <p
+                    className={`truncate text-[10px] font-medium ${
+                      syncStatus === "syncing"
+                        ? "text-sky-400"
+                        : authMode === "cloud"
+                        ? "text-emerald-400"
+                        : "text-zinc-400"
+                    }`}
+                  >
+                    {syncStatus === "syncing"
+                      ? "Đang đồng bộ..."
+                      : authMode === "cloud"
+                      ? "Cloud Synced • Đã đồng bộ Server"
+                      : `@${user.username}`}
                   </p>
                 </div>
                 <span
                   title={
-                    authMode === "cloud"
-                      ? "Cloud DB Sync"
-                      : "Local Browser Profile"
+                    syncStatus === "syncing"
+                      ? "Đang đồng bộ lên Server..."
+                      : "Cloud Synced • Đã đồng bộ Server"
                   }
                   className={`h-2 w-2 shrink-0 rounded-full ${
-                    authMode === "cloud" ? "bg-emerald-400" : "bg-amber-400"
+                    syncStatus === "syncing"
+                      ? "animate-pulse bg-sky-400 shadow-[0_0_8px_#38bdf8]"
+                      : "bg-emerald-400 shadow-[0_0_8px_#34d399]"
                   }`}
                 />
               </>
@@ -319,10 +334,8 @@ export function Sidebar() {
                   <p className="truncate text-xs font-semibold text-white">
                     Đăng nhập / Tạo tài khoản
                   </p>
-                  <p className="truncate text-[10px] text-zinc-500">
-                    {authMode === "cloud"
-                      ? "Cloud DB Sync"
-                      : "Local Browser Profile"}
+                  <p className="truncate text-[10px] text-emerald-400/90">
+                    Đăng nhập để đồng bộ Server
                   </p>
                 </div>
               </>

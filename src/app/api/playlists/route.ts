@@ -1,29 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Pool } from "pg";
-import { hasDatabaseConfigured } from "@/lib/auth/db";
+import {
+  getUserCloudSync,
+  hasDatabaseConfigured,
+  saveUserCloudSync,
+} from "@/lib/auth/db";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/jwt";
-
-let pool: Pool | null = null;
-let tableReady = false;
-
-function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
-  }
-  return pool;
-}
-
-async function ensurePlaylistsTable() {
-  if (tableReady) return;
-  await getPool().query(`
-    CREATE TABLE IF NOT EXISTS hnbee_user_playlists (
-      user_id TEXT PRIMARY KEY,
-      playlists JSONB NOT NULL DEFAULT '[]'::jsonb,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-  tableReady = true;
-}
+import type { UserPlaylist } from "@/store/usePlaylistStore";
 
 export async function GET(request: NextRequest) {
   if (!hasDatabaseConfigured()) {
@@ -41,14 +23,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await ensurePlaylistsTable();
-    const res = await getPool().query<{ playlists: unknown[] }>(
-      "SELECT playlists FROM hnbee_user_playlists WHERE user_id = $1 LIMIT 1",
-      [payload.sub]
-    );
+    const snapshot = await getUserCloudSync(payload.sub);
     return NextResponse.json({
       synced: true,
-      playlists: res.rows[0]?.playlists ?? [],
+      playlists: snapshot?.playlists ?? [],
     });
   } catch (error) {
     console.error("[api/playlists] GET error:", error);
@@ -72,17 +50,13 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const body = (await request.json()) as { playlists?: unknown[] };
+    const body = (await request.json()) as { playlists?: UserPlaylist[] };
     const playlists = Array.isArray(body.playlists) ? body.playlists : [];
-    await ensurePlaylistsTable();
-    await getPool().query(
-      `INSERT INTO hnbee_user_playlists (user_id, playlists, updated_at)
-       VALUES ($1, $2::jsonb, NOW())
-       ON CONFLICT (user_id)
-       DO UPDATE SET playlists = EXCLUDED.playlists, updated_at = NOW()`,
-      [payload.sub, JSON.stringify(playlists)]
-    );
-    return NextResponse.json({ synced: true });
+    const result = await saveUserCloudSync({
+      userId: payload.sub,
+      playlists,
+    });
+    return NextResponse.json({ synced: result.synced, syncedAt: result.syncedAt });
   } catch (error) {
     console.error("[api/playlists] PUT error:", error);
     return NextResponse.json({ synced: false }, { status: 500 });
