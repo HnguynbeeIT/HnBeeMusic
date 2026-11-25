@@ -1,7 +1,18 @@
 import type { UnifiedTrack } from "@/lib/audio/types";
 
 export type RegionCode = "VN" | "US" | "KR" | "JP" | "ALL";
-export type ArtistRegion = "VN" | "US" | "KR" | "JP";
+export type ArtistRegion = "VN" | "US" | "KR" | "JP" | "OTHER";
+
+export const ARTIST_REGION_META: Record<
+  ArtistRegion,
+  { flag: string; shortLabel: string; language: string }
+> = {
+  VN: { flag: "🇻🇳", shortLabel: "Việt Nam", language: "Tiếng Việt" },
+  US: { flag: "🇺🇸", shortLabel: "US-UK", language: "English" },
+  KR: { flag: "🇰🇷", shortLabel: "Hàn Quốc", language: "한국어" },
+  JP: { flag: "🇯🇵", shortLabel: "Nhật Bản", language: "日本語" },
+  OTHER: { flag: "🌍", shortLabel: "Khu vực khác", language: "Đa ngôn ngữ" },
+};
 
 export interface RegionInfo {
   code: RegionCode;

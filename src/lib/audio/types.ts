@@ -32,7 +32,7 @@ export interface ArtistSearchItem {
   followers?: number;
   genres: string[];
   verified: boolean;
-  region: "VN" | "US" | "KR" | "JP";
+  region: "VN" | "US" | "KR" | "JP" | "OTHER";
   language: string;
   sourceUrl?: string;
 }

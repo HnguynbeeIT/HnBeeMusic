@@ -9,7 +9,10 @@ import {
 import { searchYouTube } from "@/lib/adapters/youtube";
 import { searchSoundCloud } from "@/lib/adapters/soundcloud";
 import { searchSpotify } from "@/lib/adapters/spotify";
-import { searchArtists } from "@/lib/adapters/artist-search";
+import {
+  enrichArtistsWithTrackSignals,
+  searchArtists,
+} from "@/lib/adapters/artist-search";
 import { searchFallbackCatalog } from "@/lib/adapters/fallback-catalog";
 
 export const maxDuration = 30;
@@ -77,9 +80,15 @@ async function executeSearch(
     };
   }
 
+  const enrichedArtists = enrichArtistsWithTrackSignals(
+    artists,
+    merged,
+    region
+  );
+
   return {
     tracks: merged,
-    artists,
+    artists: enrichedArtists,
     sources: {
       youtube: hasYtKey ? "live" : "fallback",
       soundcloud: scTracks.length > 0 ? "live" : "fallback",
@@ -98,7 +107,7 @@ const runCachedSearch = unstable_cache(
     const res = await executeSearch(query, source, region);
     return { ...res, cached: true };
   },
-  ["hnbee-multi-source-search-v5"],
+  ["hnbee-multi-source-search-v6"],
   { revalidate: 1800 }
 );
 

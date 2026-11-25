@@ -1,10 +1,11 @@
-import type { ArtistSearchItem, TrackSource } from "@/lib/audio/types";
+import type {
+  ArtistSearchItem,
+  TrackSource,
+  UnifiedTrack,
+} from "@/lib/audio/types";
 import { upgradeThumbnail } from "@/lib/audio/normalize";
-import {
-  REGIONS,
-  detectArtistRegion,
-  type RegionCode,
-} from "@/lib/audio/region";
+import { REGIONS, type RegionCode } from "@/lib/audio/region";
+import { classifyArtistRegion } from "@/lib/region-classifier";
 import { getSoundCloudClientId } from "@/lib/adapters/soundcloud";
 import {
   VERIFIED_ARTISTS,
@@ -134,7 +135,12 @@ async function searchSpotifyArtists(
           }),
         ];
       }
-      const detected = detectArtistRegion(a.genres ?? [], a.name);
+      const detected = classifyArtistRegion({
+        name: a.name,
+        artistId: a.id,
+        genres: a.genres ?? [],
+        activeRegion: region,
+      });
       return [
         finalizeArtistItem({
           id: `sp:${a.id}`,
@@ -178,7 +184,12 @@ async function searchSpotifyArtists(
     };
 
     return (data.artists?.items ?? []).map((a) => {
-      const detected = detectArtistRegion(a.genres ?? [], a.name);
+      const detected = classifyArtistRegion({
+        name: a.name,
+        artistId: a.id,
+        genres: a.genres ?? [],
+        activeRegion: region,
+      });
       return finalizeArtistItem({
         id: `sp:${a.id}`,
         name: a.name,
@@ -233,7 +244,10 @@ async function searchYouTubeChannels(
       const ch = data.items?.[0];
       if (!ch) return [];
       const title = ch.snippet?.title || directHandle;
-      const detected = detectArtistRegion([], title);
+      const detected = classifyArtistRegion({
+        name: title,
+        activeRegion: region,
+      });
       return [
         finalizeArtistItem({
           id: `yt:${ch.id}`,
@@ -280,7 +294,10 @@ async function searchYouTubeChannels(
       .filter((i) => Boolean(i.id?.channelId && i.snippet?.title))
       .map((item) => {
         const title = item.snippet!.title!;
-        const detected = detectArtistRegion([], title);
+        const detected = classifyArtistRegion({
+        name: title,
+        activeRegion: region,
+      });
         return finalizeArtistItem({
           id: `yt:${item.id!.channelId!}`,
           name: title,
@@ -331,7 +348,7 @@ async function searchSoundCloudUsers(
         permalink_url?: string;
       };
       if (!u.username) return [];
-      const detected = detectArtistRegion([], u.username);
+      const detected = classifyArtistRegion({ name: u.username });
       return [
         finalizeArtistItem({
           id: `sc:${u.id}`,
@@ -372,7 +389,7 @@ async function searchSoundCloudUsers(
     return (data.collection ?? [])
       .filter((u) => Boolean(u.username))
       .map((u) => {
-        const detected = detectArtistRegion([], u.username!);
+        const detected = classifyArtistRegion({ name: u.username! });
         return finalizeArtistItem({
           id: `sc:${u.id}`,
           name: u.username!,
@@ -465,4 +482,50 @@ export async function searchArtists(
   }
 
   return [...pinned, ...rest].slice(0, 8);
+}
+
+/**
+ * Layer 2 + Layer 4 cross-enrichment: inspects returned tracks for each artist
+ * so English-named Vietnamese artists (e.g. Sixkie Dawgz, Obito) whose songs have
+ * Vietnamese titles are accurately classified as VN / Tiếng Việt and prioritized.
+ */
+export function enrichArtistsWithTrackSignals(
+  artists: ArtistSearchItem[],
+  tracks: UnifiedTrack[],
+  region: RegionCode
+): ArtistSearchItem[] {
+  const enriched = artists.map((artist) => {
+    const artistLower = artist.name.trim().toLowerCase();
+    const matchingTrackTitles = tracks
+      .filter((t) => t.artist.toLowerCase().includes(artistLower))
+      .map((t) => t.title);
+
+    const classified = classifyArtistRegion({
+      name: artist.name,
+      artistId: artist.artistId,
+      genres: artist.genres,
+      sampleTitles: matchingTrackTitles,
+      activeRegion: region,
+    });
+
+    return {
+      ...artist,
+      region: classified.region,
+      language: classified.language,
+    };
+  });
+
+  if (region === "ALL") return enriched;
+
+  return [...enriched].sort((a, b) => {
+    const aVer = a.id.startsWith("verified:") ? 1 : 0;
+    const bVer = b.id.startsWith("verified:") ? 1 : 0;
+    if (aVer !== bVer) return bVer - aVer;
+
+    const aReg = a.region === region ? 1 : 0;
+    const bReg = b.region === region ? 1 : 0;
+    if (aReg !== bReg) return bReg - aReg;
+
+    return (b.followers ?? 0) - (a.followers ?? 0);
+  });
 }

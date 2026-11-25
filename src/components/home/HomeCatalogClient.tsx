@@ -21,7 +21,7 @@ import type {
   TrackSource,
   UnifiedTrack,
 } from "@/lib/audio/types";
-import { REGIONS, type ArtistRegion } from "@/lib/audio/region";
+import { ARTIST_REGION_META, type ArtistRegion } from "@/lib/audio/region";
 import { DIRECTORY_ARTISTS } from "@/config/verified-artists";
 import { useRegion } from "@/context/RegionContext";
 import { RegionSelector } from "@/components/layout/RegionSelector";
@@ -60,22 +60,23 @@ const listContainerVariants = {
 };
 
 const ARTIST_REGION_TABS: Array<{
-  id: ArtistRegion;
+  id: ArtistRegion | "ALL";
   flag: string;
   label: string;
   language: string;
 }> = [
   { id: "VN", flag: "🇻🇳", label: "Việt Nam", language: "Tiếng Việt" },
-  { id: "US", flag: "🌐", label: "Quốc tế", language: "English" },
+  { id: "US", flag: "🇺🇸🇬🇧", label: "US-UK", language: "English" },
   { id: "KR", flag: "🇰🇷", label: "Hàn Quốc", language: "한국어" },
   { id: "JP", flag: "🇯🇵", label: "Nhật Bản", language: "日本語" },
+  { id: "ALL", flag: "🌍", label: "Tất cả", language: "Đa khu vực" },
 ];
 
 export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
   const { region } = useRegion();
   const [filter, setFilter] = useState<FilterValue>("all");
   const [resultType, setResultType] = useState<"all" | "tracks" | "artists">("all");
-  const [artistTab, setArtistTab] = useState<ArtistRegion>("VN");
+  const [artistTab, setArtistTab] = useState<ArtistRegion | "ALL">("VN");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [liveResults, setLiveResults] = useState<UnifiedTrack[] | null>(null);
@@ -84,9 +85,7 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
 
   // Sync artist directory tab when user switches global region selector
   useEffect(() => {
-    if (region !== "ALL") {
-      setArtistTab(region);
-    }
+    setArtistTab(region);
   }, [region]);
 
   const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -321,7 +320,9 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {DIRECTORY_ARTISTS.filter((a) => a.region === artistTab).map(
+          {DIRECTORY_ARTISTS.filter((a) =>
+            artistTab === "ALL" ? true : a.region === artistTab
+          ).map(
             (artist) => {
               const href = `/artist/${encodeURIComponent(artist.name)}?source=spotify${
                 artist.spotifyId ? `&artistId=${artist.spotifyId}` : ""
@@ -408,7 +409,7 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
                         Gợi ý Nghệ sĩ
                       </p>
                       {liveArtists.slice(0, 3).map((artist) => {
-                        const reg = REGIONS[artist.region];
+                        const reg = ARTIST_REGION_META[artist.region];
                         return (
                           <Link
                             key={artist.id}
