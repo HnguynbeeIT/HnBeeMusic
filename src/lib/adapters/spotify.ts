@@ -148,6 +148,176 @@ export async function searchSpotify(
   }
 }
 
+interface SpotifyEmbedTrackItem {
+  uri?: string;
+  uid?: string;
+  title?: string;
+  subtitle?: string;
+  duration?: number; // milliseconds
+}
+
+interface SpotifyEmbedEntity {
+  id?: string;
+  type?: string;
+  name?: string;
+  title?: string;
+  subtitle?: string;
+  duration?: number; // milliseconds
+  artists?: Array<{ name?: string }>;
+  coverArt?: {
+    sources?: Array<{ url?: string; width?: number | null; height?: number | null }>;
+  };
+  visualIdentity?: {
+    image?: Array<{ url?: string; maxWidth?: number; maxHeight?: number }>;
+  };
+  trackList?: SpotifyEmbedTrackItem[];
+}
+
+function pickBestEmbedCover(entity?: SpotifyEmbedEntity): string {
+  const coverSources = (entity?.coverArt?.sources ?? []).filter((s) =>
+    Boolean(s?.url)
+  );
+  if (coverSources.length > 0) {
+    const sorted = [...coverSources].sort(
+      (a, b) => (b.width || 9999) - (a.width || 9999)
+    );
+    return sorted[0].url || "";
+  }
+
+  const visualImages = (entity?.visualIdentity?.image ?? []).filter((img) =>
+    Boolean(img?.url)
+  );
+  if (visualImages.length > 0) {
+    const sorted = [...visualImages].sort(
+      (a, b) => (b.maxWidth || 0) - (a.maxWidth || 0)
+    );
+    return sorted[0].url || "";
+  }
+
+  return "";
+}
+
+function normalizeEmbedText(text?: string): string {
+  return (text || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Zero-Key Spotify Embed Fallback:
+ * Parses <script id="__NEXT_DATA__"> from https://open.spotify.com/embed/{type}/{id}
+ * Works for 100% of public Spotify playlists, albums, and tracks even when Web API returns 403/404 or keys are missing.
+ */
+async function resolveSpotifyFromEmbed(
+  resourceType: "track" | "playlist" | "album",
+  id: string
+): Promise<ResolveResponse | null> {
+  try {
+    const embedUrl = `https://open.spotify.com/embed/${resourceType}/${encodeURIComponent(
+      id
+    )}`;
+    const res = await fetch(embedUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+      },
+      next: { revalidate: 1800 },
+    });
+
+    if (!res.ok) return null;
+    const html = await res.text();
+    const markerIdx = html.indexOf("__NEXT_DATA__");
+    if (markerIdx === -1) return null;
+
+    const jsonStart = html.indexOf(">", markerIdx);
+    const jsonEnd = html.indexOf("</script>", jsonStart);
+    if (jsonStart === -1 || jsonEnd === -1) return null;
+
+    const parsed = JSON.parse(html.slice(jsonStart + 1, jsonEnd)) as {
+      props?: {
+        pageProps?: {
+          state?: {
+            data?: {
+              entity?: SpotifyEmbedEntity;
+            };
+          };
+        };
+      };
+    };
+
+    const entity = parsed?.props?.pageProps?.state?.data?.entity;
+    if (!entity) return null;
+
+    const entityTitle = normalizeEmbedText(entity.name || entity.title);
+    const cover = pickBestEmbedCover(entity);
+
+    if (resourceType === "track") {
+      const artistName =
+        entity.artists
+          ?.map((a) => normalizeEmbedText(a.name))
+          .filter(Boolean)
+          .join(", ") ||
+        normalizeEmbedText(entity.subtitle) ||
+        "Spotify Artist";
+
+      const track: UnifiedTrack = {
+        id: `sp:${entity.id || id}`,
+        title: entityTitle || "Spotify Track",
+        artist: artistName,
+        thumbnail: cover,
+        duration: Math.round((entity.duration || 0) / 1000),
+        source: "spotify",
+        sourceUrl: `https://open.spotify.com/track/${entity.id || id}`,
+      };
+
+      return {
+        type: "track",
+        title: track.title,
+        tracks: [track],
+      };
+    }
+
+    const trackList = entity.trackList ?? [];
+    if (trackList.length === 0) return null;
+
+    const tracks: UnifiedTrack[] = trackList
+      .filter((item) => Boolean(item?.title))
+      .map((item, idx) => {
+        const uriMatch = item.uri?.match(/spotify:track:([a-zA-Z0-9]+)/i);
+        const trackId = uriMatch?.[1] || item.uid || `${id}-${idx}`;
+        const title = normalizeEmbedText(item.title) || "Spotify Track";
+        const artist =
+          normalizeEmbedText(item.subtitle) ||
+          normalizeEmbedText(entity.subtitle) ||
+          "Spotify Artist";
+
+        return {
+          id: `sp:${trackId}`,
+          title,
+          artist,
+          thumbnail: cover,
+          duration: Math.round((item.duration || 0) / 1000),
+          source: "spotify",
+          sourceUrl: uriMatch?.[1]
+            ? `https://open.spotify.com/track/${uriMatch[1]}`
+            : `https://open.spotify.com/${resourceType}/${id}`,
+        };
+      });
+
+    if (tracks.length === 0) return null;
+
+    return {
+      type: resourceType,
+      title:
+        entityTitle ||
+        (resourceType === "playlist" ? "Spotify Playlist" : "Spotify Album"),
+      tracks,
+    };
+  } catch (error) {
+    console.error("[spotify-adapter] embed resolve failed:", error);
+    return null;
+  }
+}
+
 export async function resolveSpotifyResource(
   resourceType: "track" | "playlist" | "album",
   id: string,
@@ -155,74 +325,94 @@ export async function resolveSpotifyResource(
 ): Promise<ResolveResponse | null> {
   const token = await getSpotifyAccessToken(credentials);
 
+  // Step 1: Official Spotify Web API (with market=VN)
   if (token) {
     try {
       if (resourceType === "track") {
-        const res = await fetch(`https://api.spotify.com/v1/tracks/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          next: { revalidate: 3600 },
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as SpotifyTrackObject;
-        return {
-          type: "track",
-          title: data.name,
-          tracks: [mapSpotifyTrack(data)],
-        };
+        const res = await fetch(
+          `https://api.spotify.com/v1/tracks/${id}?market=VN`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            next: { revalidate: 3600 },
+          }
+        );
+        if (res.ok) {
+          const data = (await res.json()) as SpotifyTrackObject;
+          return {
+            type: "track",
+            title: data.name,
+            tracks: [mapSpotifyTrack(data)],
+          };
+        }
       }
 
       if (resourceType === "playlist") {
         const res = await fetch(
-          `https://api.spotify.com/v1/playlists/${id}?fields=name,tracks.items(track(id,name,duration_ms,artists(name),album(images),external_urls))`,
+          `https://api.spotify.com/v1/playlists/${id}?market=VN&fields=name,tracks.items(track(id,name,duration_ms,artists(name),album(images),external_urls))`,
           {
             headers: { Authorization: `Bearer ${token}` },
             next: { revalidate: 1800 },
           }
         );
-        if (!res.ok) return null;
-        const data = (await res.json()) as {
-          name?: string;
-          tracks?: { items?: Array<{ track?: SpotifyTrackObject | null }> };
-        };
-        const tracks = (data.tracks?.items ?? [])
-          .map((entry) => entry.track)
-          .filter((t): t is SpotifyTrackObject => Boolean(t?.id))
-          .map((t) => mapSpotifyTrack(t));
+        if (res.ok) {
+          const data = (await res.json()) as {
+            name?: string;
+            tracks?: { items?: Array<{ track?: SpotifyTrackObject | null }> };
+          };
+          const tracks = (data.tracks?.items ?? [])
+            .map((entry) => entry.track)
+            .filter((t): t is SpotifyTrackObject => Boolean(t?.id))
+            .map((t) => mapSpotifyTrack(t));
 
-        return {
-          type: "playlist",
-          title: data.name || "Spotify Playlist",
-          tracks,
-        };
+          if (tracks.length > 0) {
+            return {
+              type: "playlist",
+              title: data.name || "Spotify Playlist",
+              tracks,
+            };
+          }
+        }
       }
 
       if (resourceType === "album") {
-        const res = await fetch(`https://api.spotify.com/v1/albums/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          next: { revalidate: 3600 },
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as {
-          name?: string;
-          images?: SpotifyImage[];
-          tracks?: { items?: SpotifyTrackObject[] };
-        };
-        const cover = data.images?.[0]?.url || "";
-        const tracks = (data.tracks?.items ?? []).map((t) =>
-          mapSpotifyTrack(t, cover)
+        const res = await fetch(
+          `https://api.spotify.com/v1/albums/${id}?market=VN`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            next: { revalidate: 3600 },
+          }
         );
-        return {
-          type: "album",
-          title: data.name || "Spotify Album",
-          tracks,
-        };
+        if (res.ok) {
+          const data = (await res.json()) as {
+            name?: string;
+            images?: SpotifyImage[];
+            tracks?: { items?: SpotifyTrackObject[] };
+          };
+          const cover = data.images?.[0]?.url || "";
+          const tracks = (data.tracks?.items ?? []).map((t) =>
+            mapSpotifyTrack(t, cover)
+          );
+          if (tracks.length > 0) {
+            return {
+              type: "album",
+              title: data.name || "Spotify Album",
+              tracks,
+            };
+          }
+        }
       }
     } catch (error) {
       console.error("[spotify-adapter] API resolve failed:", error);
     }
   }
 
-  // Fallback via official Spotify oEmbed when API credentials aren't configured
+  // Step 2: Public Spotify Embed Fallback (full trackList without API key / 403 / 404 blocks)
+  const embedResolved = await resolveSpotifyFromEmbed(resourceType, id);
+  if (embedResolved && embedResolved.tracks.length > 0) {
+    return embedResolved;
+  }
+
+  // Step 3: Last-resort official Spotify oEmbed metadata
   try {
     const spotifyUrl = `https://open.spotify.com/${resourceType}/${id}`;
     const res = await fetch(

@@ -15,8 +15,11 @@ const YOUTUBE_PLAYLIST_REGEX =
 const YOUTUBE_VIDEO_REGEX =
   /(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;
 
-const SPOTIFY_REGEX =
-  /(?:https?:\/\/)?open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(track|playlist|album|artist)\/([a-zA-Z0-9]+)/i;
+const SPOTIFY_URL_REGEX =
+  /(?:https?:\/\/)?(?:open|play)\.spotify\.com\/(?:(?:intl-[a-z]{2}(?:-[a-z]{2})?|embed|user\/[^/?#]+)\/)*(track|playlist|album|artist)\/([a-zA-Z0-9]+)/i;
+
+const SPOTIFY_URI_REGEX =
+  /^spotify:(track|playlist|album|artist):([a-zA-Z0-9]+)$/i;
 
 const SOUNDCLOUD_REGEX =
   /(?:https?:\/\/)?(?:www\.|m\.)?(?:soundcloud\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+|on\.soundcloud\.com\/[a-zA-Z0-9]+)/i;
@@ -45,7 +48,8 @@ export function parseMusicUrl(input: string): ParsedMusicUrl | null {
     };
   }
 
-  const spMatch = trimmed.match(SPOTIFY_REGEX);
+  const spMatch =
+    trimmed.match(SPOTIFY_URL_REGEX) || trimmed.match(SPOTIFY_URI_REGEX);
   if (spMatch?.[1] && spMatch?.[2]) {
     const resourceType = spMatch[1].toLowerCase() as
       | "track"
