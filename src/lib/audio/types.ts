@@ -25,8 +25,10 @@ export interface ArtistSearchItem {
   id: string;
   name: string;
   avatar: string;
+  avatarUrl: string;
   source: TrackSource;
   artistId?: string;
+  href: string;
   followers?: number;
   genres: string[];
   verified: boolean;

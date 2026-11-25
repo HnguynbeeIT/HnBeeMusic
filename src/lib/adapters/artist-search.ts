@@ -36,8 +36,28 @@ function normKey(raw: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
-function verifiedToSearchItem(v: VerifiedArtistConfig): ArtistSearchItem {
+function makeArtistHref(
+  name: string,
+  source: TrackSource,
+  artistId?: string
+): string {
+  const params = new URLSearchParams({ source });
+  if (artistId) params.set("artistId", artistId);
+  return `/artist/${encodeURIComponent(name)}?${params.toString()}`;
+}
+
+function finalizeArtistItem(
+  item: Omit<ArtistSearchItem, "avatarUrl" | "href">
+): ArtistSearchItem {
   return {
+    ...item,
+    avatarUrl: item.avatar,
+    href: makeArtistHref(item.name, item.source, item.artistId),
+  };
+}
+
+function verifiedToSearchItem(v: VerifiedArtistConfig): ArtistSearchItem {
+  return finalizeArtistItem({
     id: v.id,
     name: v.displayName,
     avatar: v.defaultAvatar,
@@ -48,7 +68,7 @@ function verifiedToSearchItem(v: VerifiedArtistConfig): ArtistSearchItem {
     region: v.region,
     language: v.language,
     sourceUrl: v.platforms.spotify?.url || v.platforms.youtube?.url,
-  };
+  });
 }
 
 async function getSpotifyToken(creds?: ArtistSearchByok): Promise<string | null> {
@@ -107,16 +127,16 @@ async function searchSpotifyArtists(
       const verified = findVerifiedArtist(a.name, a.id);
       if (verified) {
         return [
-          {
+          finalizeArtistItem({
             ...verifiedToSearchItem(verified),
             avatar: a.images?.[0]?.url || verified.defaultAvatar,
             followers: a.followers?.total,
-          },
+          }),
         ];
       }
       const detected = detectArtistRegion(a.genres ?? [], a.name);
       return [
-        {
+        finalizeArtistItem({
           id: `sp:${a.id}`,
           name: a.name,
           avatar: a.images?.[0]?.url || "",
@@ -128,7 +148,7 @@ async function searchSpotifyArtists(
           region: detected.region,
           language: detected.language,
           sourceUrl: a.external_urls?.spotify,
-        },
+        }),
       ];
     }
 
@@ -159,7 +179,7 @@ async function searchSpotifyArtists(
 
     return (data.artists?.items ?? []).map((a) => {
       const detected = detectArtistRegion(a.genres ?? [], a.name);
-      return {
+      return finalizeArtistItem({
         id: `sp:${a.id}`,
         name: a.name,
         avatar: a.images?.[0]?.url || "",
@@ -171,7 +191,7 @@ async function searchSpotifyArtists(
         region: detected.region,
         language: detected.language,
         sourceUrl: a.external_urls?.spotify,
-      };
+      });
     });
   } catch (error) {
     console.error("[artist-search] Spotify failed:", error);
@@ -215,7 +235,7 @@ async function searchYouTubeChannels(
       const title = ch.snippet?.title || directHandle;
       const detected = detectArtistRegion([], title);
       return [
-        {
+        finalizeArtistItem({
           id: `yt:${ch.id}`,
           name: title,
           avatar: ch.snippet?.thumbnails?.high?.url || "",
@@ -228,7 +248,7 @@ async function searchYouTubeChannels(
           region: detected.region,
           language: detected.language,
           sourceUrl: `https://www.youtube.com/channel/${ch.id}`,
-        },
+        }),
       ];
     }
 
@@ -261,7 +281,7 @@ async function searchYouTubeChannels(
       .map((item) => {
         const title = item.snippet!.title!;
         const detected = detectArtistRegion([], title);
-        return {
+        return finalizeArtistItem({
           id: `yt:${item.id!.channelId!}`,
           name: title,
           avatar:
@@ -274,7 +294,7 @@ async function searchYouTubeChannels(
           region: detected.region,
           language: detected.language,
           sourceUrl: `https://www.youtube.com/channel/${item.id!.channelId!}`,
-        };
+        });
       });
   } catch (error) {
     console.error("[artist-search] YouTube channels failed:", error);
@@ -313,7 +333,7 @@ async function searchSoundCloudUsers(
       if (!u.username) return [];
       const detected = detectArtistRegion([], u.username);
       return [
-        {
+        finalizeArtistItem({
           id: `sc:${u.id}`,
           name: u.username,
           avatar: u.avatar_url
@@ -326,7 +346,7 @@ async function searchSoundCloudUsers(
           region: detected.region,
           language: detected.language,
           sourceUrl: u.permalink_url,
-        },
+        }),
       ];
     }
 
@@ -353,7 +373,7 @@ async function searchSoundCloudUsers(
       .filter((u) => Boolean(u.username))
       .map((u) => {
         const detected = detectArtistRegion([], u.username!);
-        return {
+        return finalizeArtistItem({
           id: `sc:${u.id}`,
           name: u.username!,
           avatar:
@@ -367,7 +387,7 @@ async function searchSoundCloudUsers(
           region: detected.region,
           language: detected.language,
           sourceUrl: u.permalink_url,
-        };
+        });
       });
   } catch (error) {
     console.error("[artist-search] SoundCloud users failed:", error);

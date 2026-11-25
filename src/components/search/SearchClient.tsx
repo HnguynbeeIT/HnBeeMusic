@@ -4,16 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { BadgeCheck, Search, Users, X } from "lucide-react";
+import { BadgeCheck, Loader2, Play, Search, Users, X } from "lucide-react";
 import type {
   ArtistSearchItem,
   SearchResponse,
   TrackSource,
   UnifiedTrack,
 } from "@/lib/audio/types";
+import type { UnifiedArtistResponse } from "@/lib/adapters/artist";
 import { REGIONS } from "@/lib/audio/region";
-import { SPRING_PHYSICS } from "@/lib/ui/source-theme";
+import { BUTTON_MOTION, SPRING_PHYSICS } from "@/lib/ui/source-theme";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePlayerStore } from "@/store/usePlayerStore";
 import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
 import { useRegion } from "@/context/RegionContext";
 import { RegionSelector } from "@/components/layout/RegionSelector";
@@ -59,9 +61,38 @@ export function SearchClient() {
   const [artists, setArtists] = useState<ArtistSearchItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [playingArtistId, setPlayingArtistId] = useState<string | null>(null);
+  const playTrack = usePlayerStore((s) => s.playTrack);
   const [sourceStatus, setSourceStatus] = useState<
     SearchResponse["sources"] | null
   >(null);
+
+  const handleQuickPlayTopArtist = async (
+    e: React.MouseEvent,
+    artist: ArtistSearchItem
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (playingArtistId) return;
+    setPlayingArtistId(artist.id);
+    try {
+      const params = new URLSearchParams({
+        name: artist.name,
+        source: "all",
+        preferredSource: artist.source,
+      });
+      if (artist.artistId) params.set("id", artist.artistId);
+      const res = await fetch(`/api/artist?${params.toString()}`, {
+        headers: getByokHeaders(),
+      });
+      const data = (await res.json()) as UnifiedArtistResponse;
+      if (res.ok && data.tracks?.length > 0) {
+        playTrack(data.tracks[0], data.tracks);
+      }
+    } finally {
+      setPlayingArtistId(null);
+    }
+  };
 
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
 
@@ -306,36 +337,106 @@ export function SearchClient() {
         )
       ) : (
         <div className="space-y-6">
-          {/* Artists Horizontal Strip (shown in "Tất cả" tab above tracks) */}
+          {/* Top Artist Spotlight + Horizontal Strip (shown in "Tất cả" tab above tracks) */}
           {resultType === "all" && artists.length > 0 && (
-            <section className="space-y-2.5">
+            <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-zinc-400" />
+                  <Users className="h-4 w-4 text-emerald-400" />
                   <h2 className="text-sm font-semibold text-white">
-                    Nghệ sĩ ({artists.length})
+                    Kết quả nghệ sĩ hàng đầu ({artists.length})
                   </h2>
                 </div>
-                {artists.length > 3 && (
+                {artists.length > 1 && (
                   <button
                     type="button"
                     onClick={() => setResultType("artists")}
                     className="text-xs text-zinc-400 hover:text-white"
                   >
-                    Xem tất cả →
+                    Xem tất cả nghệ sĩ →
                   </button>
                 )}
               </div>
 
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {artists.map((artist) => (
-                  <ArtistCard
-                    key={artist.id}
-                    artist={artist}
-                    variant="strip"
-                  />
-                ))}
-              </div>
+              {/* Top Artist Spotlight Card */}
+              {(() => {
+                const top = artists[0];
+                const reg = REGIONS[top.region];
+                const isBusy = playingArtistId === top.id;
+                return (
+                  <Link
+                    href={top.href || buildArtistHref(top.name, top.source, top.artistId)}
+                    className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-white/15 bg-zinc-900/70 p-4 shadow-xl backdrop-blur-xl transition-colors hover:border-white/25 hover:bg-zinc-900/90"
+                  >
+                    <TrackThumbnail
+                      src={top.avatarUrl || top.avatar}
+                      alt={top.name}
+                      className="h-18 w-18 rounded-full ring-2 ring-white/15 transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="truncate text-lg font-bold text-white">
+                          {top.name}
+                        </h3>
+                        {top.verified && (
+                          <BadgeCheck className="h-4 w-4 shrink-0 text-sky-400" />
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-zinc-400">
+                        {reg.flag} {reg.shortLabel} &bull; {top.language}
+                        {top.followers && top.followers > 0
+                          ? ` · ${
+                              top.followers >= 1_000_000
+                                ? `${(top.followers / 1_000_000).toFixed(1)}M`
+                                : top.followers >= 1_000
+                                ? `${(top.followers / 1_000).toFixed(1)}K`
+                                : top.followers
+                            } người theo dõi`
+                          : ""}
+                      </p>
+                      {top.genres.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {top.genres.slice(0, 3).map((g) => (
+                            <span
+                              key={g}
+                              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] capitalize text-zinc-300"
+                            >
+                              {g}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <motion.button
+                      type="button"
+                      {...BUTTON_MOTION}
+                      onClick={(e) => void handleQuickPlayTopArtist(e, top)}
+                      aria-label={`Phát nhạc của ${top.name}`}
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#1DB954] text-zinc-950 shadow-xl shadow-emerald-500/25 transition-transform group-hover:scale-105"
+                    >
+                      {isBusy ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Play className="h-5 w-5 translate-x-[1px] fill-zinc-950" />
+                      )}
+                    </motion.button>
+                  </Link>
+                );
+              })()}
+
+              {/* Remaining matched artists horizontal strip */}
+              {artists.length > 1 && (
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  {artists.slice(1).map((artist) => (
+                    <ArtistCard
+                      key={artist.id}
+                      artist={artist}
+                      variant="strip"
+                    />
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
