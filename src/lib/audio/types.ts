@@ -21,8 +21,23 @@ export interface UnifiedTrack {
   resolvedSource?: "youtube" | "soundcloud";
 }
 
+export interface ArtistSearchItem {
+  id: string;
+  name: string;
+  avatar: string;
+  source: TrackSource;
+  artistId?: string;
+  followers?: number;
+  genres: string[];
+  verified: boolean;
+  region: "VN" | "US" | "KR" | "JP";
+  language: string;
+  sourceUrl?: string;
+}
+
 export interface SearchResponse {
   tracks: UnifiedTrack[];
+  artists?: ArtistSearchItem[];
   sources: {
     youtube: "live" | "fallback" | "error";
     soundcloud: "live" | "fallback" | "error";
