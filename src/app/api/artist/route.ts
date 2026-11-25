@@ -6,14 +6,21 @@ import { fetchUnifiedArtist } from "@/lib/adapters/artist";
 export const maxDuration = 30;
 
 const getCachedArtist = unstable_cache(
-  async (name: string, id: string, source: "all" | TrackSource, _envSig: string) => {
+  async (
+    name: string,
+    id: string,
+    source: "all" | TrackSource,
+    preferredSource: TrackSource | "",
+    _envSig: string
+  ) => {
     return fetchUnifiedArtist({
       name,
       id: id || undefined,
       source,
+      preferredSource: preferredSource || undefined,
     });
   },
-  ["hnbee-unified-artist-v2"],
+  ["hnbee-unified-artist-v3"],
   { revalidate: 1800 }
 );
 
@@ -28,6 +35,13 @@ export async function GET(request: NextRequest) {
     rawSource === "soundcloud"
       ? rawSource
       : "all";
+  const rawPreferred = (searchParams.get("preferredSource") || "").toLowerCase();
+  const preferredSource: TrackSource | "" =
+    rawPreferred === "spotify" ||
+    rawPreferred === "youtube" ||
+    rawPreferred === "soundcloud"
+      ? rawPreferred
+      : "";
 
   if (!name && !id) {
     return NextResponse.json(
@@ -65,6 +79,7 @@ export async function GET(request: NextRequest) {
           name,
           id: id || undefined,
           source,
+          preferredSource: preferredSource || undefined,
           credentials: {
             youtubeApiKey: ytHeader || undefined,
             spotifyClientId: spIdHeader || undefined,
@@ -72,7 +87,7 @@ export async function GET(request: NextRequest) {
             soundcloudClientId: scClientIdHeader || undefined,
           },
         })
-      : await getCachedArtist(name, id, source, envSig);
+      : await getCachedArtist(name, id, source, preferredSource, envSig);
 
     return NextResponse.json(data, {
       headers: {

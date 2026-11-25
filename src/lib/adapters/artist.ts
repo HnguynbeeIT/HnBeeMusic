@@ -116,6 +116,23 @@ function normalizeName(str: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * Strict artist name normalizer:
+ * Strips platform suffixes (Official, Music, VEVO, Channel, - Topic),
+ * lowercases, and collapses whitespace — preserving hyphens/letters so
+ * "Guyn" NEVER matches "Guy", "Guy-N", or "GUYGEEGEE".
+ */
+function normalizeArtistStrict(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\s*-\s*Topic$/i, "")
+    .replace(/VEVO$/i, "")
+    .replace(/\b(official|music|channel)\b/gi, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeTrackTitle(title: string): string {
   return title
     .toLowerCase()
@@ -178,8 +195,9 @@ async function fetchSpotifyArtistData(
     }
 
     if (!artist && name.trim()) {
+      const cleanedQuery = normalizeArtistStrict(name) || name.trim();
       const searchUrl = new URL("https://api.spotify.com/v1/search");
-      searchUrl.searchParams.set("q", name.trim());
+      searchUrl.searchParams.set("q", cleanedQuery);
       searchUrl.searchParams.set("type", "artist");
       searchUrl.searchParams.set("limit", "10");
 
@@ -192,27 +210,16 @@ async function fetchSpotifyArtistData(
           artists?: { items?: SpotifyArtistObj[] };
         };
         const items = data.artists?.items ?? [];
-        const queryLower = name.trim().toLowerCase();
-        const targetNorm = normalizeName(name);
 
-        // Priority:
-        // 1) Strict exact name match (preserves hyphens so "Guyn" != "Guy-N")
-        // 2) Normalized exact match
-        // 3) Has profile artwork (images.length > 0)
-        // 4) Highest followers
-        const sorted = [...items].sort((a, b) => {
-          const aStrict = a.name.trim().toLowerCase() === queryLower ? 1 : 0;
-          const bStrict = b.name.trim().toLowerCase() === queryLower ? 1 : 0;
-          if (aStrict !== bStrict) return bStrict - aStrict;
+        // STRICT 100% MATCH ONLY: never accept fuzzy/partial lookalikes like "Guy" for "Guyn"
+        const exactMatches = items.filter(
+          (a) => normalizeArtistStrict(a.name) === cleanedQuery
+        );
 
-          const aNorm = normalizeName(a.name) === targetNorm ? 1 : 0;
-          const bNorm = normalizeName(b.name) === targetNorm ? 1 : 0;
-          if (aNorm !== bNorm) return bNorm - aNorm;
-
+        const sorted = exactMatches.sort((a, b) => {
           const aHasImg = (a.images?.length ?? 0) > 0 ? 1 : 0;
           const bHasImg = (b.images?.length ?? 0) > 0 ? 1 : 0;
           if (aHasImg !== bHasImg) return bHasImg - aHasImg;
-
           return (b.followers?.total ?? 0) - (a.followers?.total ?? 0);
         });
         artist = sorted[0] || null;
@@ -356,25 +363,18 @@ async function fetchSoundCloudArtistData(
       collection?: SoundCloudUserObj[];
     };
     const users = userData.collection ?? [];
-    const targetNorm = normalizeName(name);
+    const targetStrict = normalizeArtistStrict(name);
 
+    // Strict 100% match on SoundCloud username or full_name
     const bestUser =
       users.find(
         (u) =>
-          normalizeName(u.username) === targetNorm ||
-          normalizeName(u.full_name || "") === targetNorm
-      ) ||
-      users.find((u) => normalizeName(u.username).includes(targetNorm)) ||
-      users[0] ||
-      null;
+          normalizeArtistStrict(u.username) === targetStrict ||
+          normalizeArtistStrict(u.full_name || "") === targetStrict
+      ) || null;
 
     if (!bestUser) {
-      const fallbackTracks = await searchSoundCloud(
-        name,
-        8,
-        creds?.soundcloudClientId
-      );
-      return { user: null, tracks: fallbackTracks, albums: [] };
+      return { user: null, tracks: [], albums: [] };
     }
 
     const [tracksRes, playlistsRes] = await Promise.all([
@@ -494,8 +494,20 @@ async function fetchYouTubeArtistData(
           };
         }>;
       };
-      const first = chData.items?.[0];
-      const channelId = first?.id?.channelId;
+      const items = chData.items ?? [];
+      const rawLower = name.trim().toLowerCase();
+      const targetStrict = normalizeArtistStrict(name);
+
+      // Prefer exact channel title match (e.g. "Guyn Official"), then strict normalized match
+      const best =
+        items.find((c) => c.snippet?.title?.trim().toLowerCase() === rawLower) ||
+        items.find(
+          (c) =>
+            normalizeArtistStrict(c.snippet?.title || "") === targetStrict
+        ) ||
+        items[0];
+
+      const channelId = best?.id?.channelId;
       if (channelId) {
         const statsRes = await fetch(
           `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}&key=${apiKey}`,
@@ -519,7 +531,7 @@ async function fetchYouTubeArtistData(
               title: ch.snippet?.title || name,
               avatar:
                 ch.snippet?.thumbnails?.high?.url ||
-                first.snippet?.thumbnails?.high?.url ||
+                best.snippet?.thumbnails?.high?.url ||
                 "",
               subscribers: ch.statistics?.subscriberCount
                 ? Number(ch.statistics.subscriberCount)
@@ -541,10 +553,12 @@ export async function fetchUnifiedArtist(params: {
   name: string;
   id?: string;
   source?: "all" | TrackSource;
+  preferredSource?: TrackSource;
   credentials?: ArtistByokCredentials;
 }): Promise<UnifiedArtistResponse> {
   const queryName = params.name.trim();
   const sourceFilter = params.source ?? "all";
+  const preferredSource = params.preferredSource;
 
   const wantSp = sourceFilter === "all" || sourceFilter === "spotify";
   const wantSc = sourceFilter === "all" || sourceFilter === "soundcloud";
@@ -567,42 +581,37 @@ export async function fetchUnifiedArtist(params: {
   if (ytData.channel || ytData.tracks.length > 0) sourcesFound.push("youtube");
   if (scData.user || scData.tracks.length > 0) sourcesFound.push("soundcloud");
 
-  // Build unified profile: strict name match + avatar availability
-  const queryLower = queryName.toLowerCase();
-  const spStrictMatch =
-    spData.artist?.name.trim().toLowerCase() === queryLower;
-  const scStrictMatch =
-    scData.user?.username.trim().toLowerCase() === queryLower;
-
-  const spHasAvatar = Boolean(spData.artist?.images?.[0]?.url);
-  const scHasAvatar = Boolean(
-    scData.user?.avatar_url && !scData.user.avatar_url.includes("default_avatar")
-  );
-
-  const useSpotifyPrimary = Boolean(
-    spData.artist &&
-      (spStrictMatch || (!scStrictMatch && (spHasAvatar || !scHasAvatar)))
-  );
-  const useSoundCloudPrimary = Boolean(!useSpotifyPrimary && scData.user);
-
-  const primarySource: TrackSource = useSpotifyPrimary
-    ? "spotify"
-    : useSoundCloudPrimary
-    ? "soundcloud"
-    : ytData.channel
-    ? "youtube"
-    : "spotify";
-
+  // Determine primary profile source honoring preferredSource (e.g. ?source=youtube)
+  // and falling back cleanly when Spotify has no 100% exact match
   const scAvatar =
     scData.user?.avatar_url && !scData.user.avatar_url.includes("default_avatar")
       ? upgradeThumbnail(scData.user.avatar_url, "soundcloud")
       : "";
+  const spAvatar = spData.artist?.images?.[0]?.url || "";
+  const ytAvatar = ytData.channel?.avatar || "";
+
+  let primarySource: TrackSource = "youtube";
+  if (preferredSource === "youtube" && ytData.channel) {
+    primarySource = "youtube";
+  } else if (preferredSource === "soundcloud" && scData.user) {
+    primarySource = "soundcloud";
+  } else if (spData.artist) {
+    primarySource = "spotify";
+  } else if (ytData.channel) {
+    primarySource = "youtube";
+  } else if (scData.user) {
+    primarySource = "soundcloud";
+  } else if (preferredSource) {
+    primarySource = preferredSource;
+  }
 
   const avatar =
-    (useSpotifyPrimary ? spData.artist?.images?.[0]?.url : "") ||
+    (primarySource === "youtube" ? ytAvatar : "") ||
+    (primarySource === "soundcloud" ? scAvatar : "") ||
+    (primarySource === "spotify" ? spAvatar : "") ||
+    ytAvatar ||
     scAvatar ||
-    ytData.channel?.avatar ||
-    spData.artist?.images?.[0]?.url ||
+    spAvatar ||
     spData.tracks[0]?.thumbnail ||
     ytData.tracks[0]?.thumbnail ||
     scData.tracks[0]?.thumbnail ||
@@ -610,7 +619,6 @@ export async function fetchUnifiedArtist(params: {
 
   const banner =
     scData.user?.visuals?.visuals?.[0]?.visual_url ||
-    spData.artist?.images?.[0]?.url ||
     avatar;
 
   const externalUrls: Partial<Record<TrackSource, string>> = {};
@@ -624,28 +632,29 @@ export async function fetchUnifiedArtist(params: {
     externalUrls.soundcloud = scData.user.permalink_url;
   }
 
+  // Always preserve exact artist display name clicked by the user (e.g. "Guyn Official" / "Guyn")
+  const displayName = queryName || spData.artist?.name || ytData.channel?.title || scData.user?.username || "Artist";
+
   const profile: ArtistProfile = {
     id:
-      (useSpotifyPrimary && spData.artist ? `sp:${spData.artist.id}` : "") ||
-      (scData.user ? `sc:${scData.user.id}` : "") ||
-      (ytData.channel ? `yt:${ytData.channel.id}` : "") ||
+      (primarySource === "youtube" && ytData.channel ? `yt:${ytData.channel.id}` : "") ||
+      (primarySource === "spotify" && spData.artist ? `sp:${spData.artist.id}` : "") ||
+      (primarySource === "soundcloud" && scData.user ? `sc:${scData.user.id}` : "") ||
       `artist:${normalizeName(queryName)}`,
-    name:
-      (useSpotifyPrimary && spData.artist?.name) ||
-      (useSoundCloudPrimary && (scData.user?.username || scData.user?.full_name)) ||
-      ytData.channel?.title ||
-      queryName,
+    name: displayName,
     avatar,
     banner,
     genres: spData.artist?.genres?.slice(0, 4) ?? [],
     followers:
-      (useSpotifyPrimary ? spData.artist?.followers?.total : undefined) ??
-      scData.user?.followers_count ??
+      (primarySource === "youtube" ? ytData.channel?.subscribers : undefined) ??
+      (primarySource === "spotify" ? spData.artist?.followers?.total : undefined) ??
+      (primarySource === "soundcloud" ? scData.user?.followers_count : undefined) ??
+      spData.artist?.followers?.total ??
       ytData.channel?.subscribers ??
-      spData.artist?.followers?.total,
+      scData.user?.followers_count,
     popularity: spData.artist?.popularity,
     verified: Boolean(
-      (useSpotifyPrimary && (spData.artist?.followers?.total ?? 0) > 1000) ||
+      (spData.artist && (spData.artist.followers?.total ?? 0) > 1000) ||
         scData.user?.verified ||
         (ytData.channel?.subscribers ?? 0) > 10000
     ),
