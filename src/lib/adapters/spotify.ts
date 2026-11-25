@@ -317,12 +317,16 @@ export async function matchSpotifyTrackToAudio(
       };
     }
 
-    // Secondary fallback: SoundCloud
-    const scCandidates = await searchSoundCloud(`${track.artist} ${track.title}`);
-    if (scCandidates.length > 0) {
+    // Secondary fallback: SoundCloud (strictly full-length tracks, never 30s Go+ SNIPPET previews)
+    const scCandidates = await searchSoundCloud(`${track.artist} ${track.title}`, 6);
+    const fullSc = scCandidates.filter(
+      (c) => !c.isSnippet && (c.duration === 0 || c.duration > 45)
+    );
+    if (fullSc.length > 0) {
       return {
         ...track,
-        streamUrl: scCandidates[0].sourceUrl,
+        duration: track.duration || fullSc[0].duration,
+        streamUrl: fullSc[0].sourceUrl,
         resolvedSource: "soundcloud",
       };
     }

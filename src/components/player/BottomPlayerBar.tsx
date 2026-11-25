@@ -15,6 +15,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Sparkles,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -45,6 +46,7 @@ export function BottomPlayerBar() {
   const isFullPlayerOpen = usePlayerStore((s) => s.isFullPlayerOpen);
   const queue = usePlayerStore((s) => s.queue);
   const playbackError = usePlayerStore((s) => s.playbackError);
+  const playbackNotice = usePlayerStore((s) => s.playbackNotice);
   const likedTracks = usePlayerStore((s) => s.likedTracks);
 
   const togglePlay = usePlayerStore((s) => s.togglePlay);
@@ -73,6 +75,22 @@ export function BottomPlayerBar() {
 
   return (
     <>
+      {/* Playback info / SponsorBlock auto-skip toast */}
+      <AnimatePresence>
+        {playbackNotice && !playbackError && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96 }}
+            transition={SPRING_PHYSICS}
+            className="pointer-events-none fixed bottom-32 left-1/2 z-50 flex max-w-md -translate-x-1/2 items-center gap-2 rounded-full border border-emerald-400/30 bg-zinc-900/90 px-4 py-2 text-xs font-medium text-emerald-200 shadow-2xl shadow-black/60 backdrop-blur-xl md:bottom-28"
+          >
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <span>{playbackNotice}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Playback error toast */}
       <AnimatePresence>
         {playbackError && (

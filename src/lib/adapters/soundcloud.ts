@@ -22,6 +22,9 @@ interface SoundCloudApiTrack {
   permalink_url: string;
   artwork_url?: string | null;
   duration?: number; // milliseconds
+  full_duration?: number; // milliseconds
+  policy?: string; // "ALLOW" | "SNIPPET" | "BLOCK" | "MONETIZE"
+  monetization_model?: string;
   user?: {
     username?: string;
     avatar_url?: string;
@@ -29,6 +32,18 @@ interface SoundCloudApiTrack {
   media?: {
     transcodings?: SoundCloudTranscoding[];
   };
+}
+
+function isSoundCloudSnippet(item: SoundCloudApiTrack): boolean {
+  if (item.policy && item.policy.toUpperCase() === "SNIPPET") {
+    return true;
+  }
+  const dur = item.duration || 0;
+  const fullDur = item.full_duration || 0;
+  if (dur > 0 && dur <= 31_000 && fullDur > 45_000) {
+    return true;
+  }
+  return false;
 }
 
 let cachedPublicClientId: { id: string; expiresAt: number } | null = null;
@@ -95,14 +110,16 @@ export async function getSoundCloudClientId(
 
 function mapSoundCloudApiTrack(item: SoundCloudApiTrack): UnifiedTrack {
   const rawThumb = item.artwork_url || item.user?.avatar_url || "";
+  const snippet = isSoundCloudSnippet(item);
   return {
     id: `sc:${item.id}`,
     title: item.title || "SoundCloud Track",
     artist: item.user?.username || "SoundCloud Artist",
     thumbnail: upgradeThumbnail(rawThumb, "soundcloud"),
-    duration: Math.round((item.duration || 0) / 1000),
+    duration: Math.round((item.full_duration || item.duration || 0) / 1000),
     source: "soundcloud",
     sourceUrl: item.permalink_url,
+    ...(snippet ? { isSnippet: true } : {}),
   };
 }
 
@@ -116,10 +133,12 @@ export async function searchSoundCloud(
   try {
     const clientId = await getSoundCloudClientId(clientIdOverride);
     if (clientId) {
+      // Request extra items so we can drop 30s Go+ SNIPPET previews and still return full tracks
+      const fetchLimit = Math.min(20, Math.max(limit * 2, 12));
       const url = new URL("https://api-v2.soundcloud.com/search/tracks");
       url.searchParams.set("q", query);
       url.searchParams.set("client_id", clientId);
-      url.searchParams.set("limit", String(limit));
+      url.searchParams.set("limit", String(fetchLimit));
 
       const res = await fetch(url.toString(), {
         next: { revalidate: 1800 },
@@ -129,9 +148,21 @@ export async function searchSoundCloud(
         const data = (await res.json()) as {
           collection?: SoundCloudApiTrack[];
         };
-        const tracks = (data.collection ?? [])
-          .filter((t) => Boolean(t?.permalink_url))
+        const rawTracks = (data.collection ?? []).filter(
+          (t) =>
+            Boolean(t?.permalink_url) &&
+            t.policy?.toUpperCase() !== "BLOCK"
+        );
+
+        const fullTracks = rawTracks
+          .filter((t) => !isSoundCloudSnippet(t))
           .map(mapSoundCloudApiTrack);
+
+        // Prefer full-length tracks; only include snippet tracks if zero full tracks exist
+        const tracks =
+          fullTracks.length > 0
+            ? fullTracks.slice(0, limit)
+            : rawTracks.map(mapSoundCloudApiTrack).slice(0, limit);
 
         if (tracks.length > 0) return tracks;
       } else if (res.status === 401 || res.status === 403) {
@@ -154,9 +185,15 @@ export async function resolveSoundCloudStream(
   track: UnifiedTrack | null;
   streamUrl: string | null;
   streamType: "progressive" | "hls" | "widget";
+  isSnippet: boolean;
 }> {
   if (!trackUrl) {
-    return { track: null, streamUrl: null, streamType: "widget" };
+    return {
+      track: null,
+      streamUrl: null,
+      streamType: "widget",
+      isSnippet: false,
+    };
   }
 
   try {
@@ -169,10 +206,21 @@ export async function resolveSoundCloudStream(
       const res = await fetch(resolveApiUrl.toString(), { cache: "no-store" });
       if (res.ok) {
         const data = (await res.json()) as SoundCloudApiTrack;
+        const snippet = isSoundCloudSnippet(data);
         const track = mapSoundCloudApiTrack(data);
         const transcodings = data.media?.transcodings ?? [];
 
-        // Prefer progressive MP3 for native HTML5 <audio> playback
+        // If this track is a 30s Go+ SNIPPET, signal immediately so AudioEngineManager can match a full track
+        if (snippet) {
+          return {
+            track,
+            streamUrl: null,
+            streamType: "widget",
+            isSnippet: true,
+          };
+        }
+
+        // Prefer progressive MP3 for clean ad-free native HTML5 <audio> playback
         const progressive = transcodings.find(
           (t) => t.format?.protocol === "progressive"
         );
@@ -192,12 +240,18 @@ export async function resolveSoundCloudStream(
                 track: { ...track, streamUrl: streamJson.url },
                 streamUrl: streamJson.url,
                 streamType: progressive ? "progressive" : "hls",
+                isSnippet: false,
               };
             }
           }
         }
 
-        return { track, streamUrl: null, streamType: "widget" };
+        return {
+          track,
+          streamUrl: null,
+          streamType: "widget",
+          isSnippet: false,
+        };
       }
     }
   } catch (error) {
@@ -205,7 +259,12 @@ export async function resolveSoundCloudStream(
   }
 
   const fallbackTrack = await resolveSoundCloudTrack(trackUrl);
-  return { track: fallbackTrack, streamUrl: null, streamType: "widget" };
+  return {
+    track: fallbackTrack,
+    streamUrl: null,
+    streamType: "widget",
+    isSnippet: false,
+  };
 }
 
 export async function resolveSoundCloudTrack(

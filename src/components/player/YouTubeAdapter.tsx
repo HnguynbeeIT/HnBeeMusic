@@ -31,7 +31,10 @@ interface YouTubeAdapterProps {
   onStateChange: (state: { isPlaying?: boolean; isLoading?: boolean }) => void;
   onEnded: () => void;
   onError: (message: string) => void;
+  onFallbackRequest?: (reason: "embed_blocked" | "stall_timeout") => void;
 }
+
+const PRE_ROLL_STALL_TIMEOUT_MS = 4000;
 
 export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
   function YouTubeAdapter(
@@ -46,6 +49,7 @@ export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
       onStateChange,
       onEnded,
       onError,
+      onFallbackRequest,
     },
     ref
   ) {
@@ -53,8 +57,50 @@ export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
     const loadedIdRef = useRef<string | null>(null);
     const isPlayingRef = useRef(isPlaying);
     const volumeRef = useRef(volume);
+    const hasStartedRef = useRef(false);
+    const stallTriggeredForRef = useRef<string | null>(null);
+    const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     isPlayingRef.current = isPlaying;
     volumeRef.current = volume;
+
+    const clearStallTimer = () => {
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = null;
+      }
+    };
+
+    const armStallTimer = (targetVideoId: string) => {
+      clearStallTimer();
+      if (
+        !onFallbackRequest ||
+        hasStartedRef.current ||
+        stallTriggeredForRef.current === targetVideoId
+      ) {
+        return;
+      }
+      stallTimerRef.current = setTimeout(() => {
+        if (
+          !hasStartedRef.current &&
+          isPlayingRef.current &&
+          stallTriggeredForRef.current !== targetVideoId
+        ) {
+          stallTriggeredForRef.current = targetVideoId;
+          onFallbackRequest("stall_timeout");
+        }
+      }, PRE_ROLL_STALL_TIMEOUT_MS);
+    };
+
+    // Reset stall tracking on videoId / active change
+    useEffect(() => {
+      hasStartedRef.current = false;
+      clearStallTimer();
+      if (active && isPlaying && videoId) {
+        armStallTimer(videoId);
+      }
+      return clearStallTimer;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [active, videoId]);
 
     useImperativeHandle(ref, () => ({
       play: () => {
@@ -159,22 +205,36 @@ export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
       const ytState = event.data;
       // -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued
       if (ytState === 0) {
+        clearStallTimer();
         onEnded();
       } else if (ytState === 1) {
+        hasStartedRef.current = true;
+        clearStallTimer();
         const dur = event.target.getDuration?.() ?? 0;
         if (dur > 0) onDuration(dur);
         onStateChange({ isPlaying: true, isLoading: false });
       } else if (ytState === 2) {
+        clearStallTimer();
         onStateChange({ isPlaying: false, isLoading: false });
-      } else if (ytState === 3) {
+      } else if (ytState === 3 || ytState === -1) {
         onStateChange({ isLoading: true });
+        if (videoId && isPlayingRef.current && !hasStartedRef.current) {
+          armStallTimer(videoId);
+        }
       }
     };
 
     const handleError = (event: YouTubeEvent<number>) => {
       if (!active) return;
-      onStateChange({ isPlaying: false, isLoading: false });
+      clearStallTimer();
       const code = event.data;
+      if ((code === 101 || code === 150) && onFallbackRequest) {
+        // Trigger Clean Audio Stream Fallback (Piped/Invidious/SoundCloud)
+        onStateChange({ isLoading: true });
+        onFallbackRequest("embed_blocked");
+        return;
+      }
+      onStateChange({ isPlaying: false, isLoading: false });
       if (code === 101 || code === 150) {
         onError("Video YouTube này không cho phép phát nhúng (embed).");
       } else {
@@ -183,6 +243,7 @@ export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
     };
 
     const opts: YouTubeProps["opts"] = {
+      host: "https://www.youtube-nocookie.com",
       height: "1",
       width: "1",
       playerVars: {
@@ -190,6 +251,7 @@ export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
         controls: 0,
         disablekb: 1,
         fs: 0,
+        iv_load_policy: 3,
         modestbranding: 1,
         playsinline: 1,
         rel: 0,

@@ -12,8 +12,10 @@ export interface ApiKeysConfig {
 
 interface SettingsState extends ApiKeysConfig {
   isSettingsOpen: boolean;
+  autoSkipSponsor: boolean;
   setSettingsOpen: (open: boolean) => void;
   toggleSettingsOpen: () => void;
+  setAutoSkipSponsor: (enabled: boolean) => void;
   saveKeys: (keys: ApiKeysConfig) => void;
   clearKeys: () => void;
 }
@@ -30,10 +32,12 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       ...EMPTY_KEYS,
       isSettingsOpen: false,
+      autoSkipSponsor: true,
 
       setSettingsOpen: (open) => set({ isSettingsOpen: open }),
       toggleSettingsOpen: () =>
         set((s) => ({ isSettingsOpen: !s.isSettingsOpen })),
+      setAutoSkipSponsor: (enabled) => set({ autoSkipSponsor: enabled }),
 
       saveKeys: (keys) =>
         set({
@@ -52,6 +56,7 @@ export const useSettingsStore = create<SettingsState>()(
         spotifyClientId: state.spotifyClientId,
         spotifyClientSecret: state.spotifyClientSecret,
         soundcloudClientId: state.soundcloudClientId,
+        autoSkipSponsor: state.autoSkipSponsor,
       }),
     }
   )
