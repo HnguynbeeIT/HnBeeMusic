@@ -12,13 +12,18 @@ interface ArtistLinkProps {
 }
 
 /**
- * Extracts primary artist name (before comma / · / feat.) for clean artist routing.
+ * Extracts canonical primary artist name (before comma / · / feat. and stripping
+ * channel suffixes like Official / Offical / - Topic / VEVO) so YouTube channels
+ * like "Guyn Official" and Spotify artists like "guyn" unify into ONE artist page.
  */
 export function getPrimaryArtistName(raw: string): string {
-  const cleaned = raw
-    .split(/,|·|&|feat\.|ft\./i)[0]
-    ?.trim();
-  return cleaned || raw.trim();
+  const first = raw.split(/,|·|&|feat\.|ft\./i)[0]?.trim() || raw.trim();
+  const canonical = first
+    .replace(/\s*-\s*Topic$/i, "")
+    .replace(/VEVO$/i, "")
+    .replace(/\s+\b(official|offical|music|channel)\b$/i, "")
+    .trim();
+  return canonical || first;
 }
 
 export function buildArtistHref(
