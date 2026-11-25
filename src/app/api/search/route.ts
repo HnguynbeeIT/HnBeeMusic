@@ -6,7 +6,7 @@ import {
   sortTracksByRegion,
   type RegionCode,
 } from "@/lib/audio/region";
-import { searchYouTube } from "@/lib/adapters/youtube";
+import { searchYouTubeWithStatus } from "@/lib/adapters/youtube";
 import { searchSoundCloud } from "@/lib/adapters/soundcloud";
 import { searchSpotify } from "@/lib/adapters/spotify";
 import {
@@ -40,10 +40,10 @@ async function executeSearch(
   const wantSc = source === "all" || source === "soundcloud";
   const wantSp = source === "all" || source === "spotify";
 
-  const [ytTracks, scTracks, spTracks, artists] = await Promise.all([
-    wantYt && hasYtKey
-      ? searchYouTube(query, 8, ytKey, region)
-      : Promise.resolve([]),
+  const [ytResult, scTracks, spTracks, artists] = await Promise.all([
+    wantYt
+      ? searchYouTubeWithStatus(query, 8, ytKey, region)
+      : Promise.resolve({ tracks: [] as UnifiedTrack[], status: "api" as const }),
     wantSc
       ? searchSoundCloud(query, 8, byok?.soundcloudClientId)
       : Promise.resolve([]),
@@ -63,6 +63,7 @@ async function executeSearch(
     }),
   ]);
 
+  const ytTracks = ytResult.tracks;
   const merged: UnifiedTrack[] = sortTracksByRegion(
     [...spTracks, ...ytTracks, ...scTracks],
     region
@@ -72,8 +73,9 @@ async function executeSearch(
     return {
       tracks: searchFallbackCatalog(query, source),
       artists: [],
+      youtubeStatus: ytResult.status,
       sources: {
-        youtube: hasYtKey ? "live" : "fallback",
+        youtube: ytResult.status === "api" ? "live" : ytResult.status,
         soundcloud: "fallback",
         spotify: hasSpKey ? "live" : "fallback",
       },
@@ -89,8 +91,9 @@ async function executeSearch(
   return {
     tracks: merged,
     artists: enrichedArtists,
+    youtubeStatus: ytResult.status,
     sources: {
-      youtube: hasYtKey ? "live" : "fallback",
+      youtube: ytResult.status === "api" ? "live" : ytResult.status,
       soundcloud: scTracks.length > 0 ? "live" : "fallback",
       spotify: hasSpKey ? "live" : "fallback",
     },
@@ -107,7 +110,7 @@ const runCachedSearch = unstable_cache(
     const res = await executeSearch(query, source, region);
     return { ...res, cached: true };
   },
-  ["hnbee-multi-source-search-v6"],
+  ["hnbee-multi-source-search-v7"],
   { revalidate: 1800 }
 );
 
