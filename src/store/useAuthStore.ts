@@ -252,6 +252,25 @@ export const useAuthStore = create<AuthState>()(
       initAuth: async () => {
         if (get().initialized) return;
         try {
+          let isOAuthReturn = false;
+          if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            const oauthStatus = params.get("oauth");
+            if (oauthStatus === "success") {
+              isOAuthReturn = true;
+            }
+            if (oauthStatus) {
+              params.delete("oauth");
+              params.delete("provider");
+              params.delete("reason");
+              const nextQuery = params.toString();
+              const cleanUrl = `${window.location.pathname}${
+                nextQuery ? `?${nextQuery}` : ""
+              }${window.location.hash}`;
+              window.history.replaceState({}, "", cleanUrl);
+            }
+          }
+
           const res = await fetch("/api/auth/me", { cache: "no-store" });
           const data = (await res.json()) as AuthMeResponse;
           if (data.mode === "cloud") {
@@ -261,7 +280,12 @@ export const useAuthStore = create<AuthState>()(
               initialized: true,
             });
             if (data.user) {
-              await get().hydrateFromServer();
+              if (isOAuthReturn) {
+                // Auto-migrate & merge local browser data right after Google/Facebook login
+                await get().migrateAndSyncOnAuth();
+              } else {
+                await get().hydrateFromServer();
+              }
             }
           } else {
             const current = get().user;

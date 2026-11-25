@@ -219,15 +219,31 @@ export function AuthModal() {
                 /* LOGGED-IN PROFILE VIEW */
                 <div className="space-y-5">
                   <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-500 text-lg font-bold text-zinc-950 shadow-lg">
-                      {getInitials(user.displayName || user.username)}
-                    </div>
+                    {user.avatarUrl ? (
+                      <img
+                        src={user.avatarUrl}
+                        alt={user.displayName}
+                        referrerPolicy="no-referrer"
+                        className="h-14 w-14 shrink-0 rounded-2xl border border-white/15 object-cover shadow-lg"
+                      />
+                    ) : (
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-500 text-lg font-bold text-zinc-950 shadow-lg">
+                        {getInitials(user.displayName || user.username)}
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-base font-semibold text-white">
-                        {user.displayName}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-base font-semibold text-white">
+                          {user.displayName}
+                        </p>
+                        {user.provider && user.provider !== "credentials" && (
+                          <span className="shrink-0 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-medium capitalize text-zinc-200">
+                            {user.provider}
+                          </span>
+                        )}
+                      </div>
                       <p className="truncate font-mono text-xs text-zinc-400">
-                        @{user.username}
+                        {user.email || `@${user.username}`}
                       </p>
                       <p className="mt-1 text-[11px] text-zinc-500">
                         {likedCount} bài hát đã thích
@@ -327,8 +343,56 @@ export function AuthModal() {
                   </div>
                 </div>
               ) : (
-                /* LOGIN / ZERO-VERIFICATION REGISTER TABS */
-                <div className="space-y-5">
+                /* LOGIN / REGISTER + GOOGLE & FACEBOOK OAUTH */
+                <div className="space-y-4">
+                  {/* Social OAuth Buttons (Google & Facebook only) */}
+                  <div className="space-y-2.5">
+                    <motion.a
+                      href="/api/auth/signin/google"
+                      {...BUTTON_MOTION}
+                      className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/15 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 shadow-md transition-colors hover:bg-zinc-100"
+                    >
+                      <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          fill="#4285F4"
+                          d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.565 24 12.255 24z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 000 10.76l3.98-3.09z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.69 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                        />
+                      </svg>
+                      Tiếp tục với Google
+                    </motion.a>
+
+                    <motion.a
+                      href="/api/auth/signin/facebook"
+                      {...BUTTON_MOTION}
+                      className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-[#1877F2]/40 bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-colors hover:bg-[#166FE5]"
+                    >
+                      <svg className="h-4 w-4 shrink-0 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.267h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
+                      </svg>
+                      Tiếp tục với Facebook
+                    </motion.a>
+                  </div>
+
+                  <div className="relative flex items-center py-0.5">
+                    <div className="flex-1 border-t border-white/10" />
+                    <span className="px-3 text-[11px] text-zinc-500">
+                      hoặc dùng tài khoản HnBee
+                    </span>
+                    <div className="flex-1 border-t border-white/10" />
+                  </div>
+
                   {/* Smooth Framer Motion Tab Switcher (layoutId) */}
                   <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-black/40 p-1">
                     {(

@@ -9,6 +9,9 @@ export interface AuthUser {
   id: string;
   username: string;
   displayName: string;
+  email?: string | null;
+  avatarUrl?: string | null;
+  provider?: "google" | "facebook" | "credentials";
   mode: AuthMode;
   createdAt: string;
 }
