@@ -4,7 +4,7 @@ export type ParsedMusicUrl =
   | { source: "soundcloud"; resourceType: "track"; url: string }
   | {
       source: "spotify";
-      resourceType: "track" | "playlist" | "album";
+      resourceType: "track" | "playlist" | "album" | "artist";
       id: string;
       url: string;
     };
@@ -16,7 +16,7 @@ const YOUTUBE_VIDEO_REGEX =
   /(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;
 
 const SPOTIFY_REGEX =
-  /(?:https?:\/\/)?open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(track|playlist|album)\/([a-zA-Z0-9]+)/i;
+  /(?:https?:\/\/)?open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(track|playlist|album|artist)\/([a-zA-Z0-9]+)/i;
 
 const SOUNDCLOUD_REGEX =
   /(?:https?:\/\/)?(?:www\.|m\.)?(?:soundcloud\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+|on\.soundcloud\.com\/[a-zA-Z0-9]+)/i;
@@ -50,7 +50,8 @@ export function parseMusicUrl(input: string): ParsedMusicUrl | null {
     const resourceType = spMatch[1].toLowerCase() as
       | "track"
       | "playlist"
-      | "album";
+      | "album"
+      | "artist";
     return {
       source: "spotify",
       resourceType,
