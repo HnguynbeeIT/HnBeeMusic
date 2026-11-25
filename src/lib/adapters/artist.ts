@@ -181,7 +181,7 @@ async function fetchSpotifyArtistData(
       const searchUrl = new URL("https://api.spotify.com/v1/search");
       searchUrl.searchParams.set("q", name.trim());
       searchUrl.searchParams.set("type", "artist");
-      searchUrl.searchParams.set("limit", "5");
+      searchUrl.searchParams.set("limit", "10");
 
       const res = await fetch(searchUrl.toString(), {
         headers: { Authorization: `Bearer ${token}` },
@@ -192,11 +192,27 @@ async function fetchSpotifyArtistData(
           artists?: { items?: SpotifyArtistObj[] };
         };
         const items = data.artists?.items ?? [];
+        const queryLower = name.trim().toLowerCase();
         const targetNorm = normalizeName(name);
+
+        // Priority:
+        // 1) Strict exact name match (preserves hyphens so "Guyn" != "Guy-N")
+        // 2) Normalized exact match
+        // 3) Has profile artwork (images.length > 0)
+        // 4) Highest followers
         const sorted = [...items].sort((a, b) => {
-          const aExact = normalizeName(a.name) === targetNorm ? 1 : 0;
-          const bExact = normalizeName(b.name) === targetNorm ? 1 : 0;
-          if (aExact !== bExact) return bExact - aExact;
+          const aStrict = a.name.trim().toLowerCase() === queryLower ? 1 : 0;
+          const bStrict = b.name.trim().toLowerCase() === queryLower ? 1 : 0;
+          if (aStrict !== bStrict) return bStrict - aStrict;
+
+          const aNorm = normalizeName(a.name) === targetNorm ? 1 : 0;
+          const bNorm = normalizeName(b.name) === targetNorm ? 1 : 0;
+          if (aNorm !== bNorm) return bNorm - aNorm;
+
+          const aHasImg = (a.images?.length ?? 0) > 0 ? 1 : 0;
+          const bHasImg = (b.images?.length ?? 0) > 0 ? 1 : 0;
+          if (aHasImg !== bHasImg) return bHasImg - aHasImg;
+
           return (b.followers?.total ?? 0) - (a.followers?.total ?? 0);
         });
         artist = sorted[0] || null;
@@ -242,6 +258,7 @@ async function fetchSpotifyArtistData(
     }
 
     const albums: ArtistAlbum[] = [];
+    const rawAlbums: SpotifyAlbumObj[] = [];
     const seenAlbumNames = new Set<string>();
     if (albumsRes.ok) {
       const albData = (await albumsRes.json()) as { items?: SpotifyAlbumObj[] };
@@ -249,6 +266,7 @@ async function fetchSpotifyArtistData(
         const norm = normalizeName(alb.name);
         if (seenAlbumNames.has(norm)) continue;
         seenAlbumNames.add(norm);
+        rawAlbums.push(alb);
         albums.push({
           id: `sp-alb:${alb.id}`,
           title: alb.name,
@@ -261,6 +279,45 @@ async function fetchSpotifyArtistData(
             `https://open.spotify.com/album/${alb.id}`,
           type: alb.album_type === "single" ? "single" : "album",
         });
+      }
+    }
+
+    // Smart Fallback: if Spotify top-tracks returned empty (common for indie artists),
+    // automatically pull tracks from the artist's latest 5 albums/singles
+    if (tracks.length === 0 && rawAlbums.length > 0) {
+      const recentAlbums = rawAlbums.slice(0, 5);
+      const albumTrackLists = await Promise.all(
+        recentAlbums.map(async (alb) => {
+          try {
+            const r = await fetch(
+              `https://api.spotify.com/v1/albums/${alb.id}/tracks?market=VN&limit=10`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+                next: { revalidate: 1800 },
+              }
+            );
+            if (!r.ok) return [] as UnifiedTrack[];
+            const d = (await r.json()) as { items?: SpotifyTrackObj[] };
+            const cover = alb.images?.[0]?.url || artist?.images?.[0]?.url || "";
+            return (d.items ?? []).map((item) => ({
+              id: `sp:${item.id}`,
+              title: item.name,
+              artist:
+                item.artists?.map((a) => a.name).join(", ") || artist!.name,
+              thumbnail: cover,
+              duration: Math.round((item.duration_ms || 0) / 1000),
+              source: "spotify" as const,
+              sourceUrl:
+                item.external_urls?.spotify ||
+                `https://open.spotify.com/track/${item.id}`,
+            }));
+          } catch {
+            return [] as UnifiedTrack[];
+          }
+        })
+      );
+      for (const list of albumTrackLists) {
+        tracks.push(...list);
       }
     }
 
@@ -510,20 +567,21 @@ export async function fetchUnifiedArtist(params: {
   if (ytData.channel || ytData.tracks.length > 0) sourcesFound.push("youtube");
   if (scData.user || scData.tracks.length > 0) sourcesFound.push("soundcloud");
 
-  // Build unified profile preferring Spotify -> SoundCloud (indie) -> YouTube
-  const spNameMatches =
-    spData.artist &&
-    (normalizeName(spData.artist.name) === normalizeName(queryName) ||
-      normalizeName(spData.artist.name).includes(normalizeName(queryName)) ||
-      normalizeName(queryName).includes(normalizeName(spData.artist.name)));
+  // Build unified profile: strict name match + avatar availability
+  const queryLower = queryName.toLowerCase();
+  const spStrictMatch =
+    spData.artist?.name.trim().toLowerCase() === queryLower;
+  const scStrictMatch =
+    scData.user?.username.trim().toLowerCase() === queryLower;
 
-  const scNameMatches =
-    scData.user &&
-    (normalizeName(scData.user.username) === normalizeName(queryName) ||
-      normalizeName(scData.user.full_name || "") === normalizeName(queryName));
+  const spHasAvatar = Boolean(spData.artist?.images?.[0]?.url);
+  const scHasAvatar = Boolean(
+    scData.user?.avatar_url && !scData.user.avatar_url.includes("default_avatar")
+  );
 
   const useSpotifyPrimary = Boolean(
-    spData.artist && (spNameMatches || !scNameMatches)
+    spData.artist &&
+      (spStrictMatch || (!scStrictMatch && (spHasAvatar || !scHasAvatar)))
   );
   const useSoundCloudPrimary = Boolean(!useSpotifyPrimary && scData.user);
 
@@ -535,11 +593,14 @@ export async function fetchUnifiedArtist(params: {
     ? "youtube"
     : "spotify";
 
+  const scAvatar =
+    scData.user?.avatar_url && !scData.user.avatar_url.includes("default_avatar")
+      ? upgradeThumbnail(scData.user.avatar_url, "soundcloud")
+      : "";
+
   const avatar =
     (useSpotifyPrimary ? spData.artist?.images?.[0]?.url : "") ||
-    (scData.user?.avatar_url
-      ? upgradeThumbnail(scData.user.avatar_url, "soundcloud")
-      : "") ||
+    scAvatar ||
     ytData.channel?.avatar ||
     spData.artist?.images?.[0]?.url ||
     spData.tracks[0]?.thumbnail ||
