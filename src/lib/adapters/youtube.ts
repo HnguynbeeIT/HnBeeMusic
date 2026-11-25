@@ -1,5 +1,6 @@
 import type { UnifiedTrack } from "@/lib/audio/types";
 import { parseISO8601Duration, upgradeThumbnail } from "@/lib/audio/normalize";
+import { REGIONS, type RegionCode } from "@/lib/audio/region";
 
 interface YouTubeSearchItem {
   id: { videoId?: string };
@@ -43,18 +44,26 @@ function decodeHtmlEntities(text: string): string {
 export async function searchYouTube(
   query: string,
   maxResults = 8,
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  region: RegionCode = "VN"
 ): Promise<UnifiedTrack[]> {
   const apiKey = apiKeyOverride?.trim() || process.env.YOUTUBE_API_KEY;
   if (!apiKey || !query.trim()) return [];
 
   try {
+    const regionInfo = REGIONS[region];
     const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
     searchUrl.searchParams.set("part", "snippet");
     searchUrl.searchParams.set("type", "video");
     searchUrl.searchParams.set("videoCategoryId", "10"); // Music
     searchUrl.searchParams.set("maxResults", String(maxResults));
     searchUrl.searchParams.set("q", query);
+    if (regionInfo.youtubeRegion) {
+      searchUrl.searchParams.set("regionCode", regionInfo.youtubeRegion);
+    }
+    if (regionInfo.youtubeLang) {
+      searchUrl.searchParams.set("relevanceLanguage", regionInfo.youtubeLang);
+    }
     searchUrl.searchParams.set("key", apiKey);
 
     const searchRes = await fetch(searchUrl.toString(), {
@@ -282,5 +291,51 @@ export async function resolveYouTubePlaylist(
   } catch (error) {
     console.error("[youtube-adapter] resolveYouTubePlaylist failed:", error);
     return null;
+  }
+}
+
+export async function getTrendingYouTube(
+  region: RegionCode = "VN",
+  apiKeyOverride?: string,
+  maxResults = 12
+): Promise<UnifiedTrack[]> {
+  const apiKey = apiKeyOverride?.trim() || process.env.YOUTUBE_API_KEY;
+  if (!apiKey) return [];
+
+  try {
+    const regionInfo = REGIONS[region];
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.searchParams.set("part", "snippet,contentDetails");
+    url.searchParams.set("chart", "mostPopular");
+    url.searchParams.set("videoCategoryId", "10"); // Music
+    url.searchParams.set("maxResults", String(maxResults));
+    url.searchParams.set("regionCode", regionInfo.youtubeRegion || "VN");
+    url.searchParams.set("key", apiKey);
+
+    const res = await fetch(url.toString(), { next: { revalidate: 1800 } });
+    if (!res.ok) return [];
+
+    const data = (await res.json()) as { items?: YouTubeVideoItem[] };
+    return (data.items ?? [])
+      .filter((v) => Boolean(v.id && v.snippet))
+      .map((video) => {
+        const rawThumb =
+          video.snippet?.thumbnails?.maxres?.url ||
+          video.snippet?.thumbnails?.high?.url ||
+          `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`;
+
+        return {
+          id: `yt:${video.id}`,
+          title: decodeHtmlEntities(video.snippet?.title || "YouTube Track"),
+          artist: decodeHtmlEntities(video.snippet?.channelTitle || "YouTube"),
+          thumbnail: upgradeThumbnail(rawThumb, "youtube"),
+          duration: parseISO8601Duration(video.contentDetails?.duration),
+          source: "youtube" as const,
+          sourceUrl: `https://www.youtube.com/watch?v=${video.id}`,
+        };
+      });
+  } catch (error) {
+    console.error("[youtube-adapter] getTrendingYouTube failed:", error);
+    return [];
   }
 }

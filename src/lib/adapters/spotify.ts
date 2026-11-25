@@ -1,4 +1,5 @@
 import type { ResolveResponse, UnifiedTrack } from "@/lib/audio/types";
+import { REGIONS, type RegionCode } from "@/lib/audio/region";
 import { searchYouTube } from "./youtube";
 import { searchSoundCloud } from "./soundcloud";
 
@@ -116,7 +117,8 @@ function mapSpotifyTrack(
 export async function searchSpotify(
   query: string,
   limit = 6,
-  credentials?: SpotifyByokCredentials
+  credentials?: SpotifyByokCredentials,
+  region: RegionCode = "VN"
 ): Promise<UnifiedTrack[]> {
   if (!query.trim()) return [];
   const token = await getSpotifyAccessToken(credentials);
@@ -126,6 +128,7 @@ export async function searchSpotify(
     const url = new URL("https://api.spotify.com/v1/search");
     url.searchParams.set("q", query);
     url.searchParams.set("type", "track");
+    url.searchParams.set("market", REGIONS[region].spotifyMarket);
     url.searchParams.set("limit", String(limit));
 
     const res = await fetch(url.toString(), {

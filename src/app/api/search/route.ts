@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import type { SearchResponse, TrackSource, UnifiedTrack } from "@/lib/audio/types";
+import {
+  parseRegionCode,
+  sortTracksByRegion,
+  type RegionCode,
+} from "@/lib/audio/region";
 import { searchYouTube } from "@/lib/adapters/youtube";
 import { searchSoundCloud } from "@/lib/adapters/soundcloud";
 import { searchSpotify } from "@/lib/adapters/spotify";
@@ -11,6 +16,7 @@ export const maxDuration = 30;
 async function executeSearch(
   query: string,
   source: "all" | TrackSource,
+  region: RegionCode,
   byok?: {
     youtubeApiKey?: string;
     spotifyClientId?: string;
@@ -31,19 +37,26 @@ async function executeSearch(
   const wantSp = source === "all" || source === "spotify";
 
   const [ytTracks, scTracks, spTracks] = await Promise.all([
-    wantYt && hasYtKey ? searchYouTube(query, 8, ytKey) : Promise.resolve([]),
+    wantYt && hasYtKey
+      ? searchYouTube(query, 8, ytKey, region)
+      : Promise.resolve([]),
     wantSc
       ? searchSoundCloud(query, 8, byok?.soundcloudClientId)
       : Promise.resolve([]),
     wantSp && hasSpKey
-      ? searchSpotify(query, 6, {
-          clientId: spId,
-          clientSecret: spSecret,
-        })
+      ? searchSpotify(
+          query,
+          6,
+          { clientId: spId, clientSecret: spSecret },
+          region
+        )
       : Promise.resolve([]),
   ]);
 
-  const merged: UnifiedTrack[] = [...spTracks, ...ytTracks, ...scTracks];
+  const merged: UnifiedTrack[] = sortTracksByRegion(
+    [...spTracks, ...ytTracks, ...scTracks],
+    region
+  );
 
   if (merged.length === 0) {
     return {
@@ -70,18 +83,20 @@ const runCachedSearch = unstable_cache(
   async (
     query: string,
     source: "all" | TrackSource,
+    region: RegionCode,
     _envSig: string
   ) => {
-    const res = await executeSearch(query, source);
+    const res = await executeSearch(query, source, region);
     return { ...res, cached: true };
   },
-  ["hnbee-multi-source-search-v3"],
+  ["hnbee-multi-source-search-v4"],
   { revalidate: 1800 }
 );
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = (searchParams.get("q") || "").trim();
+  const region = parseRegionCode(searchParams.get("region"));
   const rawSource = (searchParams.get("source") || "all").toLowerCase();
   const source: "all" | TrackSource =
     rawSource === "youtube" ||
@@ -128,13 +143,14 @@ export async function GET(request: NextRequest) {
       process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET
     )}`;
     const result = hasByok
-      ? await executeSearch(query, source, {
+      ? await executeSearch(query, source, region, {
           youtubeApiKey: ytHeader || undefined,
           spotifyClientId: spIdHeader || undefined,
           spotifyClientSecret: spSecretHeader || undefined,
           soundcloudClientId: scClientIdHeader || undefined,
         })
-      : await runCachedSearch(query, source, envSig);
+      : await runCachedSearch(query, source, region, envSig);
+
     return NextResponse.json(result, {
       headers: {
         "Cache-Control": hasByok

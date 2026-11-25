@@ -19,6 +19,7 @@ import type {
   UnifiedArtistResponse,
 } from "@/lib/adapters/artist";
 import type { ResolveResponse, TrackSource, UnifiedTrack } from "@/lib/audio/types";
+import { REGIONS } from "@/lib/audio/region";
 import {
   BUTTON_MOTION,
   SPRING_PHYSICS,
@@ -253,12 +254,21 @@ export function ArtistPageClient({
           </div>
 
           <div className="min-w-0 flex-1 space-y-3">
-            {/* Verified + Platforms Found */}
+            {/* Verified + Region & Language Badge + Platforms Found */}
             <div className="flex flex-wrap items-center gap-2">
               {profile.verified && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-sky-400/30 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-medium text-sky-300">
                   <BadgeCheck className="h-3.5 w-3.5" />
                   Nghệ sĩ xác thực
+                </span>
+              )}
+              {profile.region && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-zinc-200">
+                  <span>{REGIONS[profile.region]?.flag}</span>
+                  <span>
+                    {REGIONS[profile.region]?.shortLabel} &bull;{" "}
+                    {profile.language}
+                  </span>
                 </span>
               )}
               {profile.sourcesFound.map((src) => (
