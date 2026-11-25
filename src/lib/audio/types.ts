@@ -40,6 +40,7 @@ export interface ArtistSearchItem {
 export interface SearchResponse {
   tracks: UnifiedTrack[];
   artists?: ArtistSearchItem[];
+  youtubeStatus?: "api" | "fallback" | "error";
   sources: {
     youtube: "live" | "fallback" | "error";
     soundcloud: "live" | "fallback" | "error";
