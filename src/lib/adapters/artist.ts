@@ -1,6 +1,7 @@
 import type { TrackSource, UnifiedTrack } from "@/lib/audio/types";
 import { parseISO8601Duration, upgradeThumbnail } from "@/lib/audio/normalize";
-import { detectArtistRegion, type ArtistRegion } from "@/lib/audio/region";
+import type { ArtistRegion } from "@/lib/audio/region";
+import { classifyArtistRegion } from "@/lib/region-classifier";
 import { searchYouTube } from "@/lib/adapters/youtube";
 import { getSoundCloudClientId } from "@/lib/adapters/soundcloud";
 import { FALLBACK_CATALOG } from "@/lib/adapters/fallback-catalog";
@@ -481,6 +482,7 @@ async function fetchYouTubeArtistData(
     id: string;
     title: string;
     avatar: string;
+    country?: string;
     subscribers?: number;
   } | null;
   tracks: UnifiedTrack[];
@@ -495,6 +497,7 @@ async function fetchYouTubeArtistData(
       id: string;
       title: string;
       avatar: string;
+      country?: string;
       subscribers?: number;
     } | null = null;
 
@@ -512,6 +515,7 @@ async function fetchYouTubeArtistData(
             id: string;
             snippet?: {
               title?: string;
+              country?: string;
               thumbnails?: { high?: { url: string } };
             };
             statistics?: { subscriberCount?: string };
@@ -523,6 +527,7 @@ async function fetchYouTubeArtistData(
             id: ch.id,
             title: ch.snippet?.title || name,
             avatar: ch.snippet?.thumbnails?.high?.url || "",
+            country: ch.snippet?.country,
             subscribers: ch.statistics?.subscriberCount
               ? Number(ch.statistics.subscriberCount)
               : undefined,
@@ -649,6 +654,7 @@ async function fetchYouTubeArtistData(
               id: string;
               snippet?: {
                 title?: string;
+                country?: string;
                 thumbnails?: { high?: { url: string } };
               };
               statistics?: { subscriberCount?: string };
@@ -663,6 +669,7 @@ async function fetchYouTubeArtistData(
                 ch.snippet?.thumbnails?.high?.url ||
                 best.snippet?.thumbnails?.high?.url ||
                 "",
+              country: ch.snippet?.country,
               subscribers: ch.statistics?.subscriberCount
                 ? Number(ch.statistics.subscriberCount)
                 : undefined,
@@ -798,9 +805,19 @@ export async function fetchUnifiedArtist(params: {
 
   const finalGenres =
     verifiedArtist?.genres ?? spData.artist?.genres?.slice(0, 4) ?? [];
-  const detectedRegion = verifiedArtist
-    ? { region: verifiedArtist.region, language: verifiedArtist.language }
-    : detectArtistRegion(finalGenres, displayName);
+  const sampleTitles = [
+    ...spData.tracks.map((t) => t.title),
+    ...spData.albums.map((a) => a.title),
+    ...ytData.tracks.map((t) => t.title),
+    ...scData.tracks.map((t) => t.title),
+  ];
+  const detectedRegion = classifyArtistRegion({
+    name: displayName,
+    artistId: spData.artist?.id || params.id,
+    genres: finalGenres,
+    sampleTitles,
+    youtubeCountry: ytData.channel?.country,
+  });
 
   const profile: ArtistProfile = {
     id:

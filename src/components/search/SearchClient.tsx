@@ -12,7 +12,7 @@ import type {
   UnifiedTrack,
 } from "@/lib/audio/types";
 import type { UnifiedArtistResponse } from "@/lib/adapters/artist";
-import { REGIONS } from "@/lib/audio/region";
+import { ARTIST_REGION_META } from "@/lib/audio/region";
 import { BUTTON_MOTION, SPRING_PHYSICS } from "@/lib/ui/source-theme";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePlayerStore } from "@/store/usePlayerStore";
@@ -200,7 +200,7 @@ export function SearchClient() {
                   </p>
                   <div className="space-y-0.5">
                     {artists.slice(0, 3).map((artist) => {
-                      const reg = REGIONS[artist.region];
+                      const reg = ARTIST_REGION_META[artist.region];
                       return (
                         <Link
                           key={artist.id}
@@ -361,7 +361,7 @@ export function SearchClient() {
               {/* Top Artist Spotlight Card */}
               {(() => {
                 const top = artists[0];
-                const reg = REGIONS[top.region];
+                const reg = ARTIST_REGION_META[top.region];
                 const isBusy = playingArtistId === top.id;
                 return (
                   <Link

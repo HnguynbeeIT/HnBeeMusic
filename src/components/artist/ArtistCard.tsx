@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { BadgeCheck, Loader2, Play } from "lucide-react";
 import type { ArtistSearchItem } from "@/lib/audio/types";
 import type { UnifiedArtistResponse } from "@/lib/adapters/artist";
-import { REGIONS } from "@/lib/audio/region";
+import { ARTIST_REGION_META } from "@/lib/audio/region";
 import { BUTTON_MOTION } from "@/lib/ui/source-theme";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { getByokHeaders } from "@/store/useSettingsStore";
@@ -31,7 +31,7 @@ export function ArtistCard({ artist, variant = "strip" }: ArtistCardProps) {
   const [playingNow, setPlayingNow] = useState(false);
 
   const href = buildArtistHref(artist.name, artist.source, artist.artistId);
-  const regionInfo = REGIONS[artist.region];
+  const regionInfo = ARTIST_REGION_META[artist.region];
 
   const handleQuickPlay = async (e: React.MouseEvent) => {
     e.preventDefault();
