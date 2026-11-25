@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BadgeCheck,
+  BookOpen,
   Check,
   Disc3,
   ExternalLink,
@@ -265,9 +266,23 @@ export function ArtistPageClient({
               ))}
             </div>
 
-            <h1 className="truncate text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              {profile.name}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="truncate text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                {profile.name}
+              </h1>
+              {profile.verified && (
+                <BadgeCheck
+                  aria-label="Nghệ sĩ đã xác minh"
+                  className="h-6 w-6 shrink-0 text-sky-400"
+                />
+              )}
+            </div>
+
+            {profile.bio && (
+              <p className="max-w-2xl text-sm leading-relaxed text-zinc-300">
+                {profile.bio}
+              </p>
+            )}
 
             {/* Followers + Genres */}
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-300">
@@ -350,11 +365,24 @@ export function ArtistPageClient({
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-[11px] capitalize text-zinc-400 hover:bg-white/10 hover:text-white"
+                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-[11px] capitalize text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
                   >
                     {src} <ExternalLink className="h-3 w-3" />
                   </a>
                 ) : null
+              )}
+
+              {profile.wikiUrl && (
+                <a
+                  href={profile.wikiUrl.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/20 hover:text-amber-200"
+                >
+                  <BookOpen className="h-3 w-3" />
+                  {profile.wikiUrl.label}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               )}
             </div>
           </div>

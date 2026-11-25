@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
+  ArrowUpRight,
+  BadgeCheck,
   ListPlus,
   Pause,
   Play,
@@ -12,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import type { SearchResponse, TrackSource, UnifiedTrack } from "@/lib/audio/types";
+import { VERIFIED_ARTISTS } from "@/config/verified-artists";
 import {
   BUTTON_MOTION,
   SPRING_PHYSICS,
@@ -235,6 +239,65 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
           </div>
         </section>
       )}
+
+      {/* FEATURED VERIFIED ARTISTS */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-white">
+            Nghệ sĩ nổi bật
+          </h2>
+          <span className="text-[11px] text-zinc-500">
+            Hồ sơ xác minh đa nền tảng
+          </span>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {VERIFIED_ARTISTS.filter((a) => a.featured).map((artist) => {
+            const href = `/artist/${encodeURIComponent(artist.displayName)}?source=spotify${
+              artist.platforms.spotify?.id
+                ? `&artistId=${artist.platforms.spotify.id}`
+                : ""
+            }`;
+            return (
+              <Link
+                key={artist.id}
+                href={href}
+                className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/60 p-4 shadow-xl backdrop-blur-xl transition-colors hover:border-white/20 hover:bg-zinc-900/85"
+              >
+                <TrackThumbnail
+                  src={artist.defaultAvatar}
+                  alt={artist.displayName}
+                  className="h-16 w-16 rounded-full ring-2 ring-white/15 transition-transform duration-300 group-hover:scale-105"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-base font-bold text-white">
+                      {artist.displayName}
+                    </p>
+                    {artist.verified && (
+                      <BadgeCheck className="h-4 w-4 shrink-0 text-sky-400" />
+                    )}
+                  </div>
+                  <p className="mt-0.5 line-clamp-1 text-xs text-zinc-400">
+                    {artist.bio}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {artist.genres.slice(0, 3).map((g) => (
+                      <span
+                        key={g}
+                        className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-zinc-300"
+                      >
+                        {g}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-white" />
+              </Link>
+            );
+          })}
+        </div>
+      </section>
 
       {/* LIVE MULTI-SOURCE SEARCH + SOURCE FILTER TABS + TRACK LIST */}
       <section className="space-y-4">
