@@ -27,6 +27,7 @@ import { buildArtistHref } from "@/components/artist/ArtistLink";
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { BrandLogo } from "@/components/BrandLogo";
 import { BrandCredit } from "@/components/BrandCredit";
+import { RegionSelector } from "@/components/layout/RegionSelector";
 import { getInitials } from "@/components/auth/AuthModal";
 
 const NAV_ITEMS = [
@@ -91,18 +92,21 @@ export function Sidebar() {
         <Link href="/" aria-label="HnBee Music Home">
           <BrandLogo variant="compact" />
         </Link>
-        <motion.button
-          type="button"
-          {...BUTTON_MOTION}
-          onClick={() => setSettingsOpen(true)}
-          aria-label="API Settings (BYOK)"
-          className="relative rounded-xl border border-white/10 bg-zinc-900/70 p-2 text-zinc-300"
-        >
-          <Settings className="h-4 w-4" />
-          {hasCustomKeys && (
-            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          )}
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <RegionSelector compact />
+          <motion.button
+            type="button"
+            {...BUTTON_MOTION}
+            onClick={() => setSettingsOpen(true)}
+            aria-label="API Settings (BYOK)"
+            className="relative rounded-xl border border-white/10 bg-zinc-900/70 p-2 text-zinc-300"
+          >
+            <Settings className="h-4 w-4" />
+            {hasCustomKeys && (
+              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            )}
+          </motion.button>
+        </div>
       </header>
 
       {/* DESKTOP FLOATING GLASS SIDEBAR (w-64 m-2 rounded-2xl) */}

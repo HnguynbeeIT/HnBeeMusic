@@ -1,15 +1,21 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Flame, Play } from "lucide-react";
+import type { UnifiedTrack } from "@/lib/audio/types";
 import {
   CURATED_PLAYLISTS,
   FALLBACK_CATALOG,
 } from "@/lib/adapters/fallback-catalog";
 import { BUTTON_MOTION } from "@/lib/ui/source-theme";
+import { useRegion } from "@/context/RegionContext";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
+import { RegionSelector } from "@/components/layout/RegionSelector";
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { TrackRow } from "@/components/track/TrackRow";
+import { TrackSkeleton } from "@/components/track/TrackSkeleton";
 
 const listContainerVariants = {
   hidden: {},
@@ -17,23 +23,55 @@ const listContainerVariants = {
 };
 
 export default function TrendingPage() {
+  const { region, regionInfo } = useRegion();
   const playTrack = usePlayerStore((s) => s.playTrack);
-  const trendingTracks = [...FALLBACK_CATALOG].reverse();
+  const byokKey = useSettingsStore((s) => s.youtubeApiKey);
+
+  const [tracks, setTracks] = useState<UnifiedTrack[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+
+    fetch(`/api/trending?region=${region}`, {
+      signal: controller.signal,
+      headers: getByokHeaders(),
+    })
+      .then((res) => res.json())
+      .then((data: { tracks?: UnifiedTrack[] }) => {
+        setTracks(data.tracks ?? []);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setTracks([...FALLBACK_CATALOG].reverse());
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [region, byokKey]);
 
   return (
     <div className="space-y-8">
-      <header className="space-y-1.5">
-        <div className="inline-flex items-center gap-2 rounded-full border border-orange-400/25 bg-orange-500/10 px-3 py-1 text-xs font-medium text-orange-400">
-          <Flame className="h-3.5 w-3.5" />
-          <span>Bảng xếp hạng Đa nguồn</span>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-2 rounded-full border border-orange-400/25 bg-orange-500/10 px-3 py-1 text-xs font-medium text-orange-400">
+            <Flame className="h-3.5 w-3.5" />
+            <span>
+              Bảng xếp hạng · {regionInfo.flag} {regionInfo.label}
+            </span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            Trending hôm nay
+          </h1>
+          <p className="text-sm text-zinc-400">
+            Cập nhật xu hướng âm nhạc trực tiếp theo khu vực bạn chọn.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-          Trending hôm nay
-        </h1>
-        <p className="text-sm text-zinc-400">
-          Các playlist và bản nhạc được nghe nhiều nhất trên Spotify, YouTube &amp;
-          SoundCloud.
-        </p>
+
+        <RegionSelector />
       </header>
 
       {/* Featured Playlist Cards */}
@@ -82,22 +120,27 @@ export default function TrendingPage() {
         })}
       </section>
 
-      {/* Trending Track List */}
-      <motion.div
-        variants={listContainerVariants}
-        initial="hidden"
-        animate="visible"
-        className="space-y-1 rounded-2xl border border-white/10 bg-zinc-900/40 p-2 backdrop-blur-xl"
-      >
-        {trendingTracks.map((track, idx) => (
-          <TrackRow
-            key={track.id}
-            track={track}
-            index={idx}
-            contextQueue={trendingTracks}
-          />
-        ))}
-      </motion.div>
+      {/* Regional Trending Track List */}
+      {loading ? (
+        <TrackSkeleton count={8} />
+      ) : (
+        <motion.div
+          key={region}
+          variants={listContainerVariants}
+          initial="hidden"
+          animate="visible"
+          className="space-y-1 rounded-2xl border border-white/10 bg-zinc-900/40 p-2 backdrop-blur-xl"
+        >
+          {tracks.map((track, idx) => (
+            <TrackRow
+              key={track.id}
+              track={track}
+              index={idx}
+              contextQueue={tracks}
+            />
+          ))}
+        </motion.div>
+      )}
     </div>
   );
 }

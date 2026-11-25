@@ -1,5 +1,6 @@
 import type { TrackSource, UnifiedTrack } from "@/lib/audio/types";
 import { parseISO8601Duration, upgradeThumbnail } from "@/lib/audio/normalize";
+import { detectArtistRegion, type ArtistRegion } from "@/lib/audio/region";
 import { searchYouTube } from "@/lib/adapters/youtube";
 import { getSoundCloudClientId } from "@/lib/adapters/soundcloud";
 import { FALLBACK_CATALOG } from "@/lib/adapters/fallback-catalog";
@@ -22,6 +23,8 @@ export interface ArtistProfile {
   avatar: string;
   banner?: string;
   bio?: string;
+  region: ArtistRegion;
+  language: string;
   genres: string[];
   followers?: number;
   popularity?: number;
@@ -793,6 +796,12 @@ export async function fetchUnifiedArtist(params: {
     queryName.replace(/\s+\b(official|offical)\b$/i, "").trim() ||
     queryName;
 
+  const finalGenres =
+    verifiedArtist?.genres ?? spData.artist?.genres?.slice(0, 4) ?? [];
+  const detectedRegion = verifiedArtist
+    ? { region: verifiedArtist.region, language: verifiedArtist.language }
+    : detectArtistRegion(finalGenres, displayName);
+
   const profile: ArtistProfile = {
     id:
       verifiedArtist?.id ||
@@ -804,8 +813,9 @@ export async function fetchUnifiedArtist(params: {
     avatar,
     banner,
     bio: verifiedArtist?.bio,
-    genres:
-      verifiedArtist?.genres ?? spData.artist?.genres?.slice(0, 4) ?? [],
+    region: detectedRegion.region,
+    language: detectedRegion.language,
+    genres: finalGenres,
     followers:
       spData.artist?.followers?.total ??
       ytData.channel?.subscribers ??

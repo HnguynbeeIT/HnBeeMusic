@@ -15,7 +15,10 @@ import {
   X,
 } from "lucide-react";
 import type { SearchResponse, TrackSource, UnifiedTrack } from "@/lib/audio/types";
-import { VERIFIED_ARTISTS } from "@/config/verified-artists";
+import type { ArtistRegion } from "@/lib/audio/region";
+import { DIRECTORY_ARTISTS } from "@/config/verified-artists";
+import { useRegion } from "@/context/RegionContext";
+import { RegionSelector } from "@/components/layout/RegionSelector";
 import {
   BUTTON_MOTION,
   SPRING_PHYSICS,
@@ -48,11 +51,32 @@ const listContainerVariants = {
   },
 };
 
+const ARTIST_REGION_TABS: Array<{
+  id: ArtistRegion;
+  flag: string;
+  label: string;
+  language: string;
+}> = [
+  { id: "VN", flag: "🇻🇳", label: "Việt Nam", language: "Tiếng Việt" },
+  { id: "US", flag: "🌐", label: "Quốc tế", language: "English" },
+  { id: "KR", flag: "🇰🇷", label: "Hàn Quốc", language: "한국어" },
+  { id: "JP", flag: "🇯🇵", label: "Nhật Bản", language: "日本語" },
+];
+
 export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
+  const { region } = useRegion();
   const [filter, setFilter] = useState<FilterValue>("all");
+  const [artistTab, setArtistTab] = useState<ArtistRegion>("VN");
   const [searchQuery, setSearchQuery] = useState("");
   const [liveResults, setLiveResults] = useState<UnifiedTrack[] | null>(null);
   const [searching, setSearching] = useState(false);
+
+  // Sync artist directory tab when user switches global region selector
+  useEffect(() => {
+    if (region !== "ALL") {
+      setArtistTab(region);
+    }
+  }, [region]);
 
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -82,6 +106,7 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
     const params = new URLSearchParams({
       q: debouncedQuery.trim(),
       source: filter,
+      region,
     });
 
     fetch(`/api/search?${params.toString()}`, {
@@ -101,7 +126,7 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
       });
 
     return () => controller.abort();
-  }, [debouncedQuery, filter, isSearchActive, byokVersion]);
+  }, [debouncedQuery, filter, region, isSearchActive, byokVersion]);
 
   const displayedTracks = useMemo(() => {
     if (isSearchActive) return liveResults ?? [];
@@ -240,89 +265,115 @@ export function HomeCatalogClient({ tracks }: { tracks: UnifiedTrack[] }) {
         </section>
       )}
 
-      {/* FEATURED VERIFIED ARTISTS */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-white">
-            Nghệ sĩ nổi bật
-          </h2>
-          <span className="text-[11px] text-zinc-500">
-            Hồ sơ xác minh đa nền tảng
-          </span>
+      {/* REGIONAL ARTIST DIRECTORY (Explore by Region & Language) */}
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-white">
+              Nghệ sĩ theo Khu vực &amp; Ngôn ngữ
+            </h2>
+            <p className="text-[11px] text-zinc-500">
+              {ARTIST_REGION_TABS.find((t) => t.id === artistTab)?.flag}{" "}
+              {ARTIST_REGION_TABS.find((t) => t.id === artistTab)?.label} &bull;{" "}
+              {ARTIST_REGION_TABS.find((t) => t.id === artistTab)?.language}
+            </p>
+          </div>
+
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl">
+            {ARTIST_REGION_TABS.map((tab) => {
+              const active = artistTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setArtistTab(tab.id)}
+                  className={`relative flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    active ? "text-white" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="artistDirectoryRegionTab"
+                      transition={SPRING_PHYSICS}
+                      className="absolute inset-0 -z-10 rounded-full border border-white/15 bg-white/15"
+                    />
+                  )}
+                  <span>{tab.flag}</span>
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          {VERIFIED_ARTISTS.filter((a) => a.featured).map((artist) => {
-            const href = `/artist/${encodeURIComponent(artist.displayName)}?source=spotify${
-              artist.platforms.spotify?.id
-                ? `&artistId=${artist.platforms.spotify.id}`
-                : ""
-            }`;
-            return (
-              <Link
-                key={artist.id}
-                href={href}
-                className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/60 p-4 shadow-xl backdrop-blur-xl transition-colors hover:border-white/20 hover:bg-zinc-900/85"
-              >
-                <TrackThumbnail
-                  src={artist.defaultAvatar}
-                  alt={artist.displayName}
-                  className="h-16 w-16 rounded-full ring-2 ring-white/15 transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="truncate text-base font-bold text-white">
-                      {artist.displayName}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {DIRECTORY_ARTISTS.filter((a) => a.region === artistTab).map(
+            (artist) => {
+              const href = `/artist/${encodeURIComponent(artist.name)}?source=spotify${
+                artist.spotifyId ? `&artistId=${artist.spotifyId}` : ""
+              }`;
+              return (
+                <Link
+                  key={artist.id}
+                  href={href}
+                  className="group relative flex items-center gap-3.5 overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/60 p-3.5 shadow-xl backdrop-blur-xl transition-colors hover:border-white/20 hover:bg-zinc-900/85"
+                >
+                  <TrackThumbnail
+                    src={artist.avatar}
+                    alt={artist.name}
+                    className="h-13 w-13 rounded-full ring-2 ring-white/15 transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1">
+                      <p className="truncate text-sm font-bold text-white">
+                        {artist.name}
+                      </p>
+                      {artist.verified && (
+                        <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                      )}
+                    </div>
+                    <p className="mt-0.5 truncate text-[11px] text-zinc-400">
+                      {artist.subtitle}
                     </p>
-                    {artist.verified && (
-                      <BadgeCheck className="h-4 w-4 shrink-0 text-sky-400" />
-                    )}
+                    <p className="mt-1 text-[10px] text-zinc-500">
+                      {artist.language}
+                    </p>
                   </div>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-zinc-400">
-                    {artist.bio}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {artist.genres.slice(0, 3).map((g) => (
-                      <span
-                        key={g}
-                        className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-zinc-300"
-                      >
-                        {g}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-white" />
-              </Link>
-            );
-          })}
+                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-white" />
+                </Link>
+              );
+            }
+          )}
         </div>
       </section>
 
-      {/* LIVE MULTI-SOURCE SEARCH + SOURCE FILTER TABS + TRACK LIST */}
+      {/* LIVE MULTI-SOURCE SEARCH + REGION SELECTOR + SOURCE FILTER TABS + TRACK LIST */}
       <section className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Live Debounced Search Input */}
-          <div className="relative flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm trực tiếp Spotify, YouTube, SoundCloud..."
-              className="w-full rounded-full border border-white/10 bg-zinc-900/60 py-2 pl-10 pr-9 text-xs text-white placeholder:text-zinc-500 backdrop-blur-xl focus:border-white/25 focus:outline-none"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                aria-label="Xóa tìm kiếm"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-zinc-500 hover:text-white"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+          {/* Live Debounced Search Input + Region Selector */}
+          <div className="flex flex-1 items-center gap-2 sm:max-w-md">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm trực tiếp Spotify, YouTube, SoundCloud..."
+                className="w-full rounded-full border border-white/10 bg-zinc-900/60 py-2 pl-10 pr-9 text-xs text-white placeholder:text-zinc-500 backdrop-blur-xl focus:border-white/25 focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Xóa tìm kiếm"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-zinc-500 hover:text-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <RegionSelector />
           </div>
 
           {/* Source Filter Pills (layoutId="activeSourceTab") */}

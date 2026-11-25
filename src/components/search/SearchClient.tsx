@@ -8,6 +8,8 @@ import type { SearchResponse, TrackSource, UnifiedTrack } from "@/lib/audio/type
 import { SPRING_PHYSICS } from "@/lib/ui/source-theme";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
+import { useRegion } from "@/context/RegionContext";
+import { RegionSelector } from "@/components/layout/RegionSelector";
 import { TrackRow } from "@/components/track/TrackRow";
 import { TrackSkeleton } from "@/components/track/TrackSkeleton";
 
@@ -30,6 +32,7 @@ const listContainerVariants = {
 export function SearchClient() {
   const searchParams = useSearchParams();
   const initialQ = searchParams.get("q") || "";
+  const { region } = useRegion();
 
   const [query, setQuery] = useState(initialQ);
   const [source, setSource] = useState<"all" | TrackSource>("all");
@@ -55,6 +58,7 @@ export function SearchClient() {
     const params = new URLSearchParams();
     if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
     params.set("source", source);
+    params.set("region", region);
 
     fetch(`/api/search?${params.toString()}`, {
       signal: controller.signal,
@@ -74,30 +78,33 @@ export function SearchClient() {
       });
 
     return () => controller.abort();
-  }, [debouncedQuery, source, byokVersion]);
+  }, [debouncedQuery, source, region, byokVersion]);
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Tìm bài hát, nghệ sĩ trên Spotify, YouTube, SoundCloud..."
-            className="w-full rounded-2xl border border-white/10 bg-zinc-900/60 py-3.5 pl-11 pr-10 text-sm text-white placeholder:text-zinc-500 backdrop-blur-xl focus:border-white/25 focus:outline-none"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Xóa từ khóa"
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-zinc-500 hover:text-zinc-200"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Tìm bài hát, nghệ sĩ trên Spotify, YouTube, SoundCloud..."
+              className="w-full rounded-2xl border border-white/10 bg-zinc-900/60 py-3.5 pl-11 pr-10 text-sm text-white placeholder:text-zinc-500 backdrop-blur-xl focus:border-white/25 focus:outline-none"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="Xóa từ khóa"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-zinc-500 hover:text-zinc-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <RegionSelector />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2">
