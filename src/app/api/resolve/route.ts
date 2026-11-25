@@ -63,11 +63,18 @@ export async function POST(request: NextRequest) {
       clientSecret: spSecretHeader,
     };
 
-    // Mode 1: Lazy Stream Matching for a single Spotify track on-demand
+    // Mode 1: Lazy Stream Matching for Spotify tracks OR SoundCloud 30s Go+ SNIPPET tracks
     if (body.matchTrack) {
       const t = body.matchTrack;
-      if (t.source !== "spotify") {
+      if (t.source !== "spotify" && !t.isSnippet) {
         return NextResponse.json({ track: t });
+      }
+      if (t.source === "soundcloud" && t.isSnippet) {
+        const matched = await matchSpotifyTrackToAudio(
+          { ...t, streamUrl: undefined, resolvedSource: undefined },
+          byokCredentials
+        );
+        return NextResponse.json({ track: matched });
       }
       const matched = ytHeader
         ? await matchSpotifyTrackToAudio(t, byokCredentials)

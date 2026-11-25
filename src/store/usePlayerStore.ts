@@ -26,6 +26,7 @@ interface PlayerState {
   isLyricsOpen: boolean;
   isFullPlayerOpen: boolean;
   playbackError: string | null;
+  playbackNotice: string | null;
   likedTracks: UnifiedTrack[];
 
   // Playback actions
@@ -34,6 +35,7 @@ interface PlayerState {
   setIsPlaying: (playing: boolean) => void;
   setIsLoading: (loading: boolean) => void;
   setPlaybackError: (error: string | null) => void;
+  setPlaybackNotice: (notice: string | null) => void;
   playNext: (fromAutoEnd?: boolean) => void;
   playPrev: () => void;
 
@@ -87,6 +89,7 @@ export const usePlayerStore = create<PlayerState>()(
       isLyricsOpen: false,
       isFullPlayerOpen: false,
       playbackError: null,
+      playbackNotice: null,
       likedTracks: [],
 
       playTrack: (track, newQueue) => {
@@ -138,6 +141,7 @@ export const usePlayerStore = create<PlayerState>()(
       setIsPlaying: (playing) => set({ isPlaying: playing }),
       setIsLoading: (loading) => set({ isLoading: loading }),
       setPlaybackError: (error) => set({ playbackError: error }),
+      setPlaybackNotice: (notice) => set({ playbackNotice: notice }),
 
       playNext: (fromAutoEnd = false) => {
         const { queue, queueIndex, repeatMode, isShuffle, currentTrack } =

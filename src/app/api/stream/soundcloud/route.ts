@@ -14,7 +14,7 @@ const getCachedSoundCloudStream = unstable_cache(
       )}&auto_play=false&hide_related=true&show_comments=false&show_user=false&show_reposts=false&visual=false`,
     };
   },
-  ["hnbee-soundcloud-stream-v2"],
+  ["hnbee-soundcloud-stream-v3"],
   { revalidate: 900 }
 );
 

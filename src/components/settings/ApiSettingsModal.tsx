@@ -9,6 +9,7 @@ import {
   EyeOff,
   KeyRound,
   ShieldCheck,
+  SkipForward,
   Trash2,
   X,
 } from "lucide-react";
@@ -26,7 +27,9 @@ export function ApiSettingsModal() {
   const spotifyClientId = useSettingsStore((s) => s.spotifyClientId);
   const spotifyClientSecret = useSettingsStore((s) => s.spotifyClientSecret);
   const soundcloudClientId = useSettingsStore((s) => s.soundcloudClientId);
+  const autoSkipSponsor = useSettingsStore((s) => s.autoSkipSponsor);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
+  const setAutoSkipSponsor = useSettingsStore((s) => s.setAutoSkipSponsor);
   const saveKeys = useSettingsStore((s) => s.saveKeys);
   const clearKeys = useSettingsStore((s) => s.clearKeys);
 
@@ -268,6 +271,37 @@ export function ApiSettingsModal() {
                   placeholder="Tự động trích xuất nếu để trống"
                   className="w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 font-mono text-xs text-white placeholder:text-zinc-600 focus:border-orange-400/50 focus:outline-none"
                 />
+              </div>
+
+              {/* Auto-Skip Intro & Sponsor (SponsorBlock) */}
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3.5 py-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                    <SkipForward className="h-3.5 w-3.5 text-emerald-400" />
+                    Auto-Skip Intro &amp; Sponsor
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                    Tự động tua qua quảng cáo, đoạn thoại Intro/Outro phi âm nhạc trong MV YouTube (SponsorBlock).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoSkipSponsor}
+                  aria-label="Bật hoặc tắt Auto-Skip Intro & Sponsor"
+                  onClick={() => setAutoSkipSponsor(!autoSkipSponsor)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+                    autoSkipSponsor
+                      ? "border-emerald-400/50 bg-emerald-500/80"
+                      : "border-white/15 bg-zinc-800"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                      autoSkipSponsor ? "translate-x-5" : "translate-x-1"
+                    }`}
+                  />
+                </button>
               </div>
 
               {/* Footer Controls */}

@@ -19,6 +19,10 @@ export interface UnifiedTrack {
    * Actual playback engine when source === 'spotify' after lazy matching.
    */
   resolvedSource?: "youtube" | "soundcloud";
+  /**
+   * True when a SoundCloud Go+ track is restricted to a 30s snippet preview.
+   */
+  isSnippet?: boolean;
 }
 
 export interface ArtistSearchItem {
