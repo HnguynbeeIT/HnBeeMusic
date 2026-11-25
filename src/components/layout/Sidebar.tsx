@@ -289,9 +289,18 @@ export function Sidebar() {
           >
             {user ? (
               <>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-500 text-xs font-bold text-zinc-950">
-                  {getInitials(user.displayName || user.username)}
-                </div>
+                {user.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.displayName}
+                    referrerPolicy="no-referrer"
+                    className="h-8 w-8 shrink-0 rounded-lg border border-white/15 object-cover"
+                  />
+                ) : (
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-500 text-xs font-bold text-zinc-950">
+                    {getInitials(user.displayName || user.username)}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-semibold text-white">
                     {user.displayName}
@@ -370,9 +379,18 @@ export function Sidebar() {
           className="relative flex flex-col items-center justify-center gap-1 text-[10px] font-medium text-zinc-400 hover:text-white"
         >
           {user ? (
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 text-[9px] font-bold text-zinc-950">
-              {getInitials(user.displayName || user.username)}
-            </span>
+            user.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.displayName}
+                referrerPolicy="no-referrer"
+                className="h-5 w-5 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 text-[9px] font-bold text-zinc-950">
+                {getInitials(user.displayName || user.username)}
+              </span>
+            )
           ) : (
             <UserRound className="h-5 w-5" />
           )}

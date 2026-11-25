@@ -12,6 +12,7 @@ export interface SessionPayload {
 
 function getJwtSecret(): Uint8Array {
   const secret =
+    process.env.AUTH_SECRET ||
     process.env.AUTH_JWT_SECRET ||
     process.env.DATABASE_URL ||
     "hnbeemusic-dev-fallback-secret-change-in-prod";

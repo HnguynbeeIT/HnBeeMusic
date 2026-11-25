@@ -14,6 +14,8 @@ export interface DbUserRow {
   display_name: string;
   avatar_url?: string | null;
   region?: string | null;
+  oauth_provider?: string | null;
+  oauth_provider_id?: string | null;
   password_hash: string;
   created_at: Date | string;
   updated_at?: Date | string;
@@ -141,10 +143,17 @@ async function ensurePgSchema(): Promise<void> {
 }
 
 export function toAuthUser(row: DbUserRow): AuthUser {
+  const provider =
+    row.oauth_provider === "google" || row.oauth_provider === "facebook"
+      ? row.oauth_provider
+      : "credentials";
   return {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
+    email: row.email ?? null,
+    avatarUrl: row.avatar_url ?? null,
+    provider,
     mode: "cloud",
     createdAt:
       row.created_at instanceof Date
@@ -223,6 +232,102 @@ export async function createDbUser(params: {
     p_display_name: params.displayName,
     p_password_hash: params.passwordHash,
     p_region: params.region || "VN",
+  });
+}
+
+export async function upsertOAuthUser(params: {
+  id: string;
+  provider: "google" | "facebook";
+  providerId: string;
+  email: string | null;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+}): Promise<DbUserRow> {
+  if (hasPgUrl()) {
+    await ensurePgSchema();
+    const db = getPool();
+    await db.query(`
+      ALTER TABLE hnbee_users
+        ADD COLUMN IF NOT EXISTS oauth_provider TEXT,
+        ADD COLUMN IF NOT EXISTS oauth_provider_id TEXT;
+    `);
+    const byProvider = await db.query<DbUserRow>(
+      "SELECT * FROM hnbee_users WHERE oauth_provider = $1 AND oauth_provider_id = $2 LIMIT 1",
+      [params.provider, params.providerId]
+    );
+    if (byProvider.rows[0]) {
+      const updated = await db.query<DbUserRow>(
+        `UPDATE hnbee_users
+         SET email = COALESCE($2, email),
+             display_name = COALESCE($3, display_name),
+             avatar_url = COALESCE($4, avatar_url),
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          byProvider.rows[0].id,
+          params.email,
+          params.displayName,
+          params.avatarUrl,
+        ]
+      );
+      return updated.rows[0];
+    }
+
+    if (params.email) {
+      const byEmail = await db.query<DbUserRow>(
+        "SELECT * FROM hnbee_users WHERE lower(email) = lower($1) LIMIT 1",
+        [params.email]
+      );
+      if (byEmail.rows[0]) {
+        const updated = await db.query<DbUserRow>(
+          `UPDATE hnbee_users
+           SET oauth_provider = $2,
+               oauth_provider_id = $3,
+               display_name = COALESCE($4, display_name),
+               avatar_url = COALESCE($5, avatar_url),
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [
+            byEmail.rows[0].id,
+            params.provider,
+            params.providerId,
+            params.displayName,
+            params.avatarUrl,
+          ]
+        );
+        return updated.rows[0];
+      }
+    }
+
+    const inserted = await db.query<DbUserRow>(
+      `INSERT INTO hnbee_users (id, username, email, password_hash, display_name, avatar_url, region, oauth_provider, oauth_provider_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 'VN', $7, $8)
+       RETURNING *`,
+      [
+        params.id,
+        params.username,
+        params.email,
+        `oauth:${params.provider}`,
+        params.displayName,
+        params.avatarUrl,
+        params.provider,
+        params.providerId,
+      ]
+    );
+    return inserted.rows[0];
+  }
+
+  return callSupabaseRpc<DbUserRow>("hnbee_upsert_oauth_user", {
+    p_id: params.id,
+    p_provider: params.provider,
+    p_provider_id: params.providerId,
+    p_email: params.email || "",
+    p_username: params.username,
+    p_display_name: params.displayName,
+    p_avatar_url: params.avatarUrl || "",
   });
 }
 
