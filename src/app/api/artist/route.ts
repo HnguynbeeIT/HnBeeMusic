@@ -20,7 +20,7 @@ const getCachedArtist = unstable_cache(
       preferredSource: preferredSource || undefined,
     });
   },
-  ["hnbee-unified-artist-v4"],
+  ["hnbee-unified-artist-v5"],
   { revalidate: 1800 }
 );
 

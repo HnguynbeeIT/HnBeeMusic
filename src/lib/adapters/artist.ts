@@ -1,13 +1,9 @@
 import type { TrackSource, UnifiedTrack } from "@/lib/audio/types";
-import { upgradeThumbnail } from "@/lib/audio/normalize";
-import {
-  searchYouTube,
-} from "@/lib/adapters/youtube";
-import {
-  getSoundCloudClientId,
-  searchSoundCloud,
-} from "@/lib/adapters/soundcloud";
+import { parseISO8601Duration, upgradeThumbnail } from "@/lib/audio/normalize";
+import { searchYouTube } from "@/lib/adapters/youtube";
+import { getSoundCloudClientId } from "@/lib/adapters/soundcloud";
 import { FALLBACK_CATALOG } from "@/lib/adapters/fallback-catalog";
+import { findVerifiedArtist } from "@/config/verified-artists";
 
 export interface ArtistAlbum {
   id: string;
@@ -25,6 +21,7 @@ export interface ArtistProfile {
   name: string;
   avatar: string;
   banner?: string;
+  bio?: string;
   genres: string[];
   followers?: number;
   popularity?: number;
@@ -32,6 +29,10 @@ export interface ArtistProfile {
   primarySource: TrackSource;
   sourcesFound: TrackSource[];
   externalUrls: Partial<Record<TrackSource, string>>;
+  wikiUrl?: {
+    label: string;
+    url: string;
+  };
 }
 
 export interface UnifiedArtistResponse {
@@ -337,7 +338,8 @@ async function fetchSpotifyArtistData(
 
 async function fetchSoundCloudArtistData(
   name: string,
-  creds?: ArtistByokCredentials
+  creds?: ArtistByokCredentials,
+  lockedPermalink?: string
 ): Promise<{
   user: SoundCloudUserObj | null;
   tracks: UnifiedTrack[];
@@ -345,33 +347,54 @@ async function fetchSoundCloudArtistData(
 }> {
   try {
     const clientId = await getSoundCloudClientId(creds?.soundcloudClientId);
-    if (!clientId || !name.trim()) {
+    if (!clientId || (!name.trim() && !lockedPermalink)) {
       return { user: null, tracks: [], albums: [] };
     }
 
-    const searchUrl = new URL("https://api-v2.soundcloud.com/search/users");
-    searchUrl.searchParams.set("q", name.trim());
-    searchUrl.searchParams.set("client_id", clientId);
-    searchUrl.searchParams.set("limit", "6");
+    let bestUser: SoundCloudUserObj | null = null;
 
-    const userRes = await fetch(searchUrl.toString(), {
-      next: { revalidate: 1800 },
-    });
-    if (!userRes.ok) return { user: null, tracks: [], albums: [] };
+    // 1. Direct permalink resolve for Verified Artists (e.g. soundcloud.com/guyn-music)
+    if (lockedPermalink) {
+      const resolveUrl = new URL("https://api-v2.soundcloud.com/resolve");
+      resolveUrl.searchParams.set(
+        "url",
+        `https://soundcloud.com/${lockedPermalink}`
+      );
+      resolveUrl.searchParams.set("client_id", clientId);
 
-    const userData = (await userRes.json()) as {
-      collection?: SoundCloudUserObj[];
-    };
-    const users = userData.collection ?? [];
-    const targetStrict = normalizeArtistStrict(name);
+      const res = await fetch(resolveUrl.toString(), {
+        next: { revalidate: 1800 },
+      });
+      if (res.ok) {
+        bestUser = (await res.json()) as SoundCloudUserObj;
+      }
+    }
 
-    // Strict 100% match on SoundCloud username or full_name
-    const bestUser =
-      users.find(
-        (u) =>
-          normalizeArtistStrict(u.username) === targetStrict ||
-          normalizeArtistStrict(u.full_name || "") === targetStrict
-      ) || null;
+    // 2. Fallback: strict 100% name match via SoundCloud search/users
+    if (!bestUser && name.trim()) {
+      const searchUrl = new URL("https://api-v2.soundcloud.com/search/users");
+      searchUrl.searchParams.set("q", name.trim());
+      searchUrl.searchParams.set("client_id", clientId);
+      searchUrl.searchParams.set("limit", "6");
+
+      const userRes = await fetch(searchUrl.toString(), {
+        next: { revalidate: 1800 },
+      });
+      if (!userRes.ok) return { user: null, tracks: [], albums: [] };
+
+      const userData = (await userRes.json()) as {
+        collection?: SoundCloudUserObj[];
+      };
+      const users = userData.collection ?? [];
+      const targetStrict = normalizeArtistStrict(name);
+
+      bestUser =
+        users.find(
+          (u) =>
+            normalizeArtistStrict(u.username) === targetStrict ||
+            normalizeArtistStrict(u.full_name || "") === targetStrict
+        ) || null;
+    }
 
     if (!bestUser) {
       return { user: null, tracks: [], albums: [] };
@@ -411,12 +434,7 @@ async function fetchSoundCloudArtistData(
     }
 
     if (tracks.length === 0) {
-      const searched = await searchSoundCloud(
-        name,
-        6,
-        creds?.soundcloudClientId
-      );
-      tracks.push(...searched);
+      return { user: bestUser, tracks: [], albums: [] };
     }
 
     const albums: ArtistAlbum[] = [];
@@ -453,7 +471,8 @@ async function fetchSoundCloudArtistData(
 
 async function fetchYouTubeArtistData(
   name: string,
-  creds?: ArtistByokCredentials
+  creds?: ArtistByokCredentials,
+  lockedHandle?: string
 ): Promise<{
   channel: {
     id: string;
@@ -464,19 +483,11 @@ async function fetchYouTubeArtistData(
   tracks: UnifiedTrack[];
 }> {
   const apiKey = creds?.youtubeApiKey?.trim() || process.env.YOUTUBE_API_KEY;
-  if (!apiKey || !name.trim()) return { channel: null, tracks: [] };
+  if (!apiKey || (!name.trim() && !lockedHandle)) {
+    return { channel: null, tracks: [] };
+  }
 
   try {
-    const [chSearchRes, tracks] = await Promise.all([
-      fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=3&q=${encodeURIComponent(
-          name.trim()
-        )}&key=${apiKey}`,
-        { next: { revalidate: 1800 } }
-      ),
-      searchYouTube(`${name.trim()} Official Audio`, 8, apiKey),
-    ]);
-
     let channel: {
       id: string;
       title: string;
@@ -484,7 +495,123 @@ async function fetchYouTubeArtistData(
       subscribers?: number;
     } | null = null;
 
-    if (chSearchRes.ok) {
+    // 1. Direct handle lookup for Verified Artists (e.g. forHandle=@HnBeeStudio)
+    if (lockedHandle) {
+      const handleRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${encodeURIComponent(
+          lockedHandle
+        )}&key=${apiKey}`,
+        { next: { revalidate: 1800 } }
+      );
+      if (handleRes.ok) {
+        const handleData = (await handleRes.json()) as {
+          items?: Array<{
+            id: string;
+            snippet?: {
+              title?: string;
+              thumbnails?: { high?: { url: string } };
+            };
+            statistics?: { subscriberCount?: string };
+          }>;
+        };
+        const ch = handleData.items?.[0];
+        if (ch) {
+          channel = {
+            id: ch.id,
+            title: ch.snippet?.title || name,
+            avatar: ch.snippet?.thumbnails?.high?.url || "",
+            subscribers: ch.statistics?.subscriberCount
+              ? Number(ch.statistics.subscriberCount)
+              : undefined,
+          };
+        }
+      }
+    }
+
+    // 2. If locked channel found, fetch its exact popular uploads directly
+    if (channel?.id && lockedHandle) {
+      const chVideosRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.id}&type=video&order=viewCount&maxResults=10&key=${apiKey}`,
+        { next: { revalidate: 1800 } }
+      );
+      if (chVideosRes.ok) {
+        const vidData = (await chVideosRes.json()) as {
+          items?: Array<{
+            id?: { videoId?: string };
+            snippet?: {
+              title?: string;
+              channelTitle?: string;
+              thumbnails?: {
+                high?: { url: string };
+                medium?: { url: string };
+              };
+            };
+          }>;
+        };
+        const items = (vidData.items ?? []).filter((i) => i.id?.videoId);
+        const ids = items.map((i) => i.id!.videoId!).join(",");
+        const durationMap = new Map<string, number>();
+
+        if (ids) {
+          const detRes = await fetch(
+            `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${apiKey}`,
+            { next: { revalidate: 1800 } }
+          );
+          if (detRes.ok) {
+            const detData = (await detRes.json()) as {
+              items?: Array<{
+                id: string;
+                contentDetails?: { duration?: string };
+              }>;
+            };
+            for (const v of detData.items ?? []) {
+              durationMap.set(
+                v.id,
+                parseISO8601Duration(v.contentDetails?.duration)
+              );
+            }
+          }
+        }
+
+        const tracks: UnifiedTrack[] = items.map((item) => {
+          const videoId = item.id!.videoId!;
+          const rawThumb =
+            item.snippet?.thumbnails?.high?.url ||
+            item.snippet?.thumbnails?.medium?.url ||
+            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+          return {
+            id: `yt:${videoId}`,
+            title: (item.snippet?.title || "YouTube Track")
+              .replace(/&amp;/g, "&")
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'"),
+            artist: item.snippet?.channelTitle || channel!.title || name,
+            thumbnail: upgradeThumbnail(rawThumb, "youtube"),
+            duration: durationMap.get(videoId) ?? 0,
+            source: "youtube",
+            sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          };
+        });
+
+        if (tracks.length > 0) {
+          return { channel, tracks };
+        }
+      }
+    }
+
+    const [chSearchRes, tracks] = await Promise.all([
+      !channel
+        ? fetch(
+            `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=3&q=${encodeURIComponent(
+              name.trim()
+            )}&key=${apiKey}`,
+            { next: { revalidate: 1800 } }
+          )
+        : Promise.resolve(null),
+      searchYouTube(`${name.trim()} Official Audio`, 8, apiKey),
+    ]);
+
+    if (chSearchRes && chSearchRes.ok) {
       const chData = (await chSearchRes.json()) as {
         items?: Array<{
           id?: { channelId?: string };
@@ -560,19 +687,39 @@ export async function fetchUnifiedArtist(params: {
   const sourceFilter = params.source ?? "all";
   const preferredSource = params.preferredSource;
 
+  // Check Verified Artists registry first for locked platform IDs
+  const verifiedArtist = findVerifiedArtist(queryName, params.id);
+  const effectiveName = verifiedArtist?.displayName || queryName;
+  const effectiveSpotifyId =
+    verifiedArtist?.platforms.spotify?.id || params.id;
+  const lockedYtHandle = verifiedArtist?.platforms.youtube?.handle;
+  const lockedScPermalink = verifiedArtist?.platforms.soundcloud?.permalink;
+
   const wantSp = sourceFilter === "all" || sourceFilter === "spotify";
   const wantSc = sourceFilter === "all" || sourceFilter === "soundcloud";
   const wantYt = sourceFilter === "all" || sourceFilter === "youtube";
 
   const [spData, scData, ytData] = await Promise.all([
     wantSp
-      ? fetchSpotifyArtistData(queryName, params.id, params.credentials)
+      ? fetchSpotifyArtistData(
+          effectiveName,
+          effectiveSpotifyId,
+          params.credentials
+        )
       : Promise.resolve({ artist: null, tracks: [], albums: [] }),
     wantSc
-      ? fetchSoundCloudArtistData(queryName, params.credentials)
+      ? fetchSoundCloudArtistData(
+          effectiveName,
+          params.credentials,
+          lockedScPermalink
+        )
       : Promise.resolve({ user: null, tracks: [], albums: [] }),
     wantYt
-      ? fetchYouTubeArtistData(queryName, params.credentials)
+      ? fetchYouTubeArtistData(
+          effectiveName,
+          params.credentials,
+          lockedYtHandle
+        )
       : Promise.resolve({ channel: null, tracks: [] }),
   ]);
 
@@ -608,8 +755,9 @@ export async function fetchUnifiedArtist(params: {
 
   const avatar =
     spAvatar ||
-    ytAvatar ||
     scAvatar ||
+    ytAvatar ||
+    verifiedArtist?.defaultAvatar ||
     spData.tracks[0]?.thumbnail ||
     ytData.tracks[0]?.thumbnail ||
     scData.tracks[0]?.thumbnail ||
@@ -620,24 +768,34 @@ export async function fetchUnifiedArtist(params: {
     avatar;
 
   const externalUrls: Partial<Record<TrackSource, string>> = {};
-  if (spData.artist?.external_urls?.spotify) {
+  if (verifiedArtist?.platforms.spotify?.url) {
+    externalUrls.spotify = verifiedArtist.platforms.spotify.url;
+  } else if (spData.artist?.external_urls?.spotify) {
     externalUrls.spotify = spData.artist.external_urls.spotify;
   }
-  if (ytData.channel?.id) {
+
+  if (verifiedArtist?.platforms.youtube?.url) {
+    externalUrls.youtube = verifiedArtist.platforms.youtube.url;
+  } else if (ytData.channel?.id) {
     externalUrls.youtube = `https://www.youtube.com/channel/${ytData.channel.id}`;
   }
-  if (scData.user?.permalink_url) {
+
+  if (verifiedArtist?.platforms.soundcloud?.url) {
+    externalUrls.soundcloud = verifiedArtist.platforms.soundcloud.url;
+  } else if (scData.user?.permalink_url) {
     externalUrls.soundcloud = scData.user.permalink_url;
   }
 
-  // Canonical unified artist display name (strip Official/Topic suffix when unified with Spotify)
+  // Canonical unified artist display name
   const displayName =
+    verifiedArtist?.displayName ||
     (spData.artist && spData.artist.name) ||
     queryName.replace(/\s+\b(official|offical)\b$/i, "").trim() ||
     queryName;
 
   const profile: ArtistProfile = {
     id:
+      verifiedArtist?.id ||
       (spData.artist ? `sp:${spData.artist.id}` : "") ||
       (ytData.channel ? `yt:${ytData.channel.id}` : "") ||
       (scData.user ? `sc:${scData.user.id}` : "") ||
@@ -645,14 +803,18 @@ export async function fetchUnifiedArtist(params: {
     name: displayName,
     avatar,
     banner,
-    genres: spData.artist?.genres?.slice(0, 4) ?? [],
+    bio: verifiedArtist?.bio,
+    genres:
+      verifiedArtist?.genres ?? spData.artist?.genres?.slice(0, 4) ?? [],
     followers:
       spData.artist?.followers?.total ??
       ytData.channel?.subscribers ??
       scData.user?.followers_count,
     popularity: spData.artist?.popularity,
     verified: Boolean(
-      (spData.artist && (spData.albums.length > 0 || spData.tracks.length > 0)) ||
+      verifiedArtist?.verified ||
+        (spData.artist &&
+          (spData.albums.length > 0 || spData.tracks.length > 0)) ||
         (spData.artist && ytData.channel) ||
         scData.user?.verified ||
         (ytData.channel?.subscribers ?? 0) > 10000
@@ -660,6 +822,7 @@ export async function fetchUnifiedArtist(params: {
     primarySource,
     sourcesFound,
     externalUrls,
+    wikiUrl: verifiedArtist?.platforms.wiki,
   };
 
   // Deduplicate tracks per (source + normalizedTitle) so each platform tab stays rich
