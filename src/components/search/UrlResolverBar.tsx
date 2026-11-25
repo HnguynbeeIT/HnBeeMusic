@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Link2, Loader2 } from "lucide-react";
 import type { ResolveResponse } from "@/lib/audio/types";
@@ -16,6 +17,7 @@ export function UrlResolverBar() {
     message: string;
   } | null>(null);
 
+  const router = useRouter();
   const playTrack = usePlayerStore((s) => s.playTrack);
 
   const handleResolve = async (e: React.FormEvent) => {
@@ -36,7 +38,20 @@ export function UrlResolverBar() {
         body: JSON.stringify({ url: trimmed }),
       });
 
-      const data = (await res.json()) as ResolveResponse & { error?: string };
+      const data = (await res.json()) as ResolveResponse & {
+        error?: string;
+      };
+
+      if (res.ok && data.type === "artist" && data.artistName) {
+        setUrl("");
+        router.push(
+          `/artist/${encodeURIComponent(data.artistName)}?source=spotify${
+            data.artistId ? `&artistId=${encodeURIComponent(data.artistId)}` : ""
+          }`
+        );
+        return;
+      }
+
       if (!res.ok || !data.tracks?.length) {
         setStatus({
           type: "error",

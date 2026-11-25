@@ -32,7 +32,9 @@ export interface SearchResponse {
 }
 
 export interface ResolveResponse {
-  type: "track" | "playlist" | "album";
+  type: "track" | "playlist" | "album" | "artist";
   title?: string;
+  artistId?: string;
+  artistName?: string;
   tracks: UnifiedTrack[];
 }

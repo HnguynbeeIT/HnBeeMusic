@@ -11,6 +11,7 @@ import {
   matchSpotifyTrackToAudio,
   resolveSpotifyResource,
 } from "@/lib/adapters/spotify";
+import { fetchUnifiedArtist } from "@/lib/adapters/artist";
 
 export const maxDuration = 30;
 
@@ -142,9 +143,31 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Spotify Artist URL -> return artist metadata so UI navigates directly to /artist/[slug]
+    if (parsed.source === "spotify" && parsed.resourceType === "artist") {
+      const artistData = await fetchUnifiedArtist({
+        name: "",
+        id: parsed.id,
+        source: "spotify",
+        preferredSource: "spotify",
+        credentials: {
+          youtubeApiKey: ytHeader,
+          spotifyClientId: spIdHeader,
+          spotifyClientSecret: spSecretHeader,
+        },
+      });
+      return NextResponse.json({
+        type: "artist",
+        artistId: parsed.id,
+        artistName: artistData.profile.name,
+        title: artistData.profile.name,
+        tracks: artistData.tracks,
+      });
+    }
+
     // Spotify: Metadata extraction ONLY (lazy matching runs when user plays a track)
     const resolved = await resolveSpotifyResource(
-      parsed.resourceType,
+      parsed.resourceType as "track" | "playlist" | "album",
       parsed.id,
       byokCredentials
     );
