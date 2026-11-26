@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import { MotionProvider } from "@/components/layout/MotionProvider";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { AmbientGlow } from "@/components/player/AmbientGlow";
@@ -76,6 +77,7 @@ export default function RootLayout({
           <CloudSyncManager />
           <LazyModals />
         </MotionProvider>
+        <Analytics />
       </body>
     </html>
   );
