@@ -49,6 +49,10 @@ const listContainerVariants = {
   visible: { transition: { staggerChildren: 0.03 } },
 };
 
+// In-session client cache so returning to /search or switching tabs renders in 0ms
+const searchSessionCache = new Map<string, SearchResponse>();
+const MAX_SEARCH_CACHE_ENTRIES = 50;
+
 export function SearchClient() {
   const searchParams = useSearchParams();
   const initialQ = searchParams.get("q") || "";
@@ -113,18 +117,29 @@ export function SearchClient() {
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
-  const debouncedQuery = useDebounce(query, 400);
+  const debouncedQuery = useDebounce(query, 350);
   const byokVersion = useSettingsStore(
     (s) =>
       `${s.youtubeApiKey}:${s.spotifyClientId}:${s.spotifyClientSecret}:${s.soundcloudClientId}`
   );
 
   useEffect(() => {
+    const trimmed = debouncedQuery.trim();
+    const cacheKey = `${region}|${source}|${trimmed.toLowerCase()}|${byokVersion}`;
+    const cached = searchSessionCache.get(cacheKey);
+    if (cached) {
+      setTracks(cached.tracks ?? []);
+      setArtists(cached.artists ?? []);
+      setSourceStatus(cached.sources ?? null);
+      setLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     setLoading(true);
 
     const params = new URLSearchParams();
-    if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
+    if (trimmed) params.set("q", trimmed);
     params.set("source", source);
     params.set("region", region);
 
@@ -134,6 +149,11 @@ export function SearchClient() {
     })
       .then((res) => res.json())
       .then((data: SearchResponse) => {
+        if (searchSessionCache.size >= MAX_SEARCH_CACHE_ENTRIES) {
+          const oldestKey = searchSessionCache.keys().next().value;
+          if (oldestKey) searchSessionCache.delete(oldestKey);
+        }
+        searchSessionCache.set(cacheKey, data);
         setTracks(data.tracks ?? []);
         setArtists(data.artists ?? []);
         setSourceStatus(data.sources ?? null);

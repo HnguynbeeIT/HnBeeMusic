@@ -25,15 +25,13 @@ import {
 } from "@/lib/ui/source-theme";
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { SourceBadge } from "@/components/track/SourceBadge";
-import { SeekBar } from "./SeekBar";
+import { PlayerSeekBar } from "./PlayerSeekBar";
 
 export function FullScreenPlayerModal() {
   const isOpen = usePlayerStore((s) => s.isFullPlayerOpen);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isLoading = usePlayerStore((s) => s.isLoading);
-  const progress = usePlayerStore((s) => s.progress);
-  const duration = usePlayerStore((s) => s.duration);
   const isShuffle = usePlayerStore((s) => s.isShuffle);
   const repeatMode = usePlayerStore((s) => s.repeatMode);
   const likedTracks = usePlayerStore((s) => s.likedTracks);
@@ -182,9 +180,7 @@ export function FullScreenPlayerModal() {
             </div>
 
             <div className="mt-6 w-full">
-              <SeekBar
-                progress={progress}
-                duration={duration}
+              <PlayerSeekBar
                 source={currentTrack.source}
                 onSeek={seekTo}
               />

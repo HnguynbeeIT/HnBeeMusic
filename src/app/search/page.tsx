@@ -10,8 +10,7 @@ export default function SearchPage() {
           Tìm kiếm đa nguồn
         </h1>
         <p className="text-sm text-zinc-400">
-          Tự động debounce 400ms &amp; cache phía server để tối ưu tốc độ và
-          tiết kiệm API quota.
+          Tự động debounce 350ms &amp; cache đa tầng cho tốc độ phản hồi tức thì.
         </p>
       </header>
 
