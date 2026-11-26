@@ -4,19 +4,42 @@ export interface CachedStreamEntry {
   youtubeId?: string;
   streamUrl: string;
   resolvedSource: "youtube" | "soundcloud";
+  matchedTitle?: string;
+  matchScore?: number;
   audioUrl?: string;
   audioUrlUpdatedAt?: number;
   updatedAt: number;
 }
 
-const STORAGE_KEY = "hnbee_stream_cache_v1";
+const LEGACY_STORAGE_KEYS = ["hnbee_stream_cache_v1"];
+const STORAGE_KEY = "hnbee_stream_cache_v2";
 const MAX_ENTRIES = 500;
 // Signed direct audio URLs (e.g. googlevideo.com / sndcdn.com) stay fresh for ~2 hours
 const DIRECT_AUDIO_TTL_MS = 2 * 60 * 60 * 1000;
 
 let memoryCache: Record<string, CachedStreamEntry> | null = null;
+let legacyPurged = false;
+
+/**
+ * Deletes legacy `hnbee_stream_cache_v1` from localStorage on startup
+ * so any mis-matched Spotify streams from older versions are completely wiped.
+ */
+export function purgeLegacyStreamCache(): void {
+  if (legacyPurged || typeof window === "undefined") return;
+  legacyPurged = true;
+  try {
+    for (const oldKey of LEGACY_STORAGE_KEYS) {
+      if (window.localStorage.getItem(oldKey) !== null) {
+        window.localStorage.removeItem(oldKey);
+      }
+    }
+  } catch {
+    // Ignore private-browsing storage restrictions
+  }
+}
 
 function loadCache(): Record<string, CachedStreamEntry> {
+  purgeLegacyStreamCache();
   if (memoryCache) return memoryCache;
   if (typeof window === "undefined") return {};
   try {
@@ -92,6 +115,8 @@ export function setCachedDirectAudioUrl(
     streamUrl: string;
     resolvedSource: "youtube" | "soundcloud";
     youtubeId?: string;
+    matchedTitle?: string;
+    matchScore?: number;
   }
 ): void {
   if (!trackId || !audioUrl) return;
@@ -103,6 +128,8 @@ export function setCachedDirectAudioUrl(
     resolvedSource:
       existing?.resolvedSource || fallbackMeta?.resolvedSource || "youtube",
     youtubeId: existing?.youtubeId || fallbackMeta?.youtubeId,
+    matchedTitle: existing?.matchedTitle || fallbackMeta?.matchedTitle,
+    matchScore: existing?.matchScore ?? fallbackMeta?.matchScore,
     audioUrl,
     audioUrlUpdatedAt: now,
     updatedAt: now,

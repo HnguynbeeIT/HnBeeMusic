@@ -11,6 +11,7 @@ import {
   clearCachedDirectAudioUrl,
   getCachedDirectAudioUrl,
   getCachedStream,
+  purgeLegacyStreamCache,
   setCachedDirectAudioUrl,
   setCachedStream,
 } from "@/lib/audio/stream-cache";
@@ -92,8 +93,9 @@ export function AudioEngineManager() {
   const activeRampCancelRef = useRef<(() => void) | null>(null);
   const [rampedVolume, setRampedVolume] = useState<number | null>(null);
 
-  // SSR-safe iOS & mobile detection
+  // SSR-safe iOS & mobile detection + purge legacy hnbee_stream_cache_v1 on startup
   useEffect(() => {
+    purgeLegacyStreamCache();
     if (typeof navigator === "undefined") return;
     const ios = isIOSDevice();
     setIsIOS(ios);
@@ -694,13 +696,23 @@ export function AudioEngineManager() {
       return;
     }
 
-    // 0ms Instant Cache Hit from hnbee_stream_cache_v1
+    // 0ms Instant Cache Hit from hnbee_stream_cache_v2
     const cached = getCachedStream(currentTrack.id);
     if (cached) {
+      const matchedId =
+        cached.youtubeId ||
+        (cached.resolvedSource === "youtube"
+          ? extractYouTubeId(cached.streamUrl) || cached.streamUrl
+          : cached.streamUrl);
+      console.log(
+        `[StreamMatch] Spotify (cache_v2): "${currentTrack.title} - ${currentTrack.artist}" -> Matched: "${cached.matchedTitle || currentTrack.title}" (ID: ${matchedId}, Score: ${cached.matchScore ?? "cached"})`
+      );
       updateTrackInStore({
         ...currentTrack,
         streamUrl: cached.streamUrl,
         resolvedSource: cached.resolvedSource,
+        matchedTitle: cached.matchedTitle,
+        matchScore: cached.matchScore,
       });
       return;
     }
@@ -722,13 +734,19 @@ export function AudioEngineManager() {
       .then((res) => res.json())
       .then((data: { track?: typeof targetTrack }) => {
         if (data.track?.streamUrl && data.track?.resolvedSource) {
+          const ytId =
+            data.track.resolvedSource === "youtube"
+              ? extractYouTubeId(data.track.streamUrl) || undefined
+              : undefined;
+          console.log(
+            `[StreamMatch] Spotify: "${targetTrack.title} - ${targetTrack.artist}" -> Matched: "${data.track.matchedTitle || data.track.title}" (ID: ${ytId || data.track.streamUrl}, Score: ${data.track.matchScore ?? "N/A"})`
+          );
           setCachedStream(targetTrack.id, {
-            youtubeId:
-              data.track.resolvedSource === "youtube"
-                ? extractYouTubeId(data.track.streamUrl) || undefined
-                : undefined,
+            youtubeId: ytId,
             streamUrl: data.track.streamUrl,
             resolvedSource: data.track.resolvedSource,
+            matchedTitle: data.track.matchedTitle,
+            matchScore: data.track.matchScore,
           });
           updateTrackInStore(data.track);
         } else if (reqId === playRequestIdRef.current) {
@@ -774,6 +792,8 @@ export function AudioEngineManager() {
         ...nextTrack,
         streamUrl: cachedNext.streamUrl,
         resolvedSource: cachedNext.resolvedSource,
+        matchedTitle: cachedNext.matchedTitle,
+        matchScore: cachedNext.matchScore,
       });
       return;
     }
@@ -797,6 +817,8 @@ export function AudioEngineManager() {
                 : undefined,
             streamUrl: data.track.streamUrl,
             resolvedSource: data.track.resolvedSource,
+            matchedTitle: data.track.matchedTitle,
+            matchScore: data.track.matchScore,
           });
           updateTrackInStore(data.track);
         }

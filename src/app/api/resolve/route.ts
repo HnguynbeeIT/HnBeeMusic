@@ -39,7 +39,7 @@ const cachedLazyMatch = unstable_cache(
     }
     return matched;
   },
-  ["hnbee-spotify-lazy-match-v2"],
+  ["hnbee-spotify-lazy-match-v3"],
   { revalidate: 3600 }
 );
 

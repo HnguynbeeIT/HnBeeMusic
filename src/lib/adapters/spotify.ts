@@ -1,23 +1,14 @@
 import type { ResolveResponse, UnifiedTrack } from "@/lib/audio/types";
 import { REGIONS, type RegionCode } from "@/lib/audio/region";
+import {
+  cleanSearchTitle,
+  extractPrimaryArtist,
+  scoreCandidate,
+} from "@/lib/audio/strict-match";
 import { searchYouTube } from "./youtube";
 import { searchSoundCloud } from "./soundcloud";
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
-
-// Strictly excluded noise keywords (unless present in original Spotify track title)
-const HARD_NOISE_KEYWORDS = [
-  "karaoke",
-  "beat",
-  "instrumental",
-  "reaction",
-  "8d",
-  "nightcore",
-  "sped up",
-  "slowed",
-];
-
-const SOFT_PENALTY_KEYWORDS = ["cover", "remix", "live", "mashup"];
 
 interface SpotifyArtist {
   name: string;
@@ -30,6 +21,8 @@ interface SpotifyImage {
 interface SpotifyTrackObject {
   id: string;
   name: string;
+  type?: string;
+  is_local?: boolean;
   duration_ms: number;
   artists: SpotifyArtist[];
   album?: {
@@ -282,7 +275,14 @@ async function resolveSpotifyFromEmbed(
     if (trackList.length === 0) return null;
 
     const tracks: UnifiedTrack[] = trackList
-      .filter((item) => Boolean(item?.title))
+      .filter((item) => {
+        if (!item?.title) return false;
+        // Strictly reject podcast episodes or ads if present in embed trackList
+        if (item.uri && /^spotify:(episode|show|ad):/i.test(item.uri)) {
+          return false;
+        }
+        return true;
+      })
       .map((item, idx) => {
         const uriMatch = item.uri?.match(/spotify:track:([a-zA-Z0-9]+)/i);
         const trackId = uriMatch?.[1] || item.uid || `${id}-${idx}`;
@@ -350,7 +350,7 @@ export async function resolveSpotifyResource(
 
       if (resourceType === "playlist") {
         const fields =
-          "name,tracks(total,items(track(id,name,duration_ms,artists(name),album(images),external_urls)))";
+          "name,tracks(total,items(is_local,track(id,name,type,is_local,duration_ms,artists(name),album(images),external_urls)))";
         const res = await fetch(
           `https://api.spotify.com/v1/playlists/${id}?market=VN&fields=${encodeURIComponent(fields)}`,
           {
@@ -363,7 +363,10 @@ export async function resolveSpotifyResource(
             name?: string;
             tracks?: {
               total?: number;
-              items?: Array<{ track?: SpotifyTrackObject | null }>;
+              items?: Array<{
+                is_local?: boolean;
+                track?: SpotifyTrackObject | null;
+              }>;
             };
           };
           const allRawItems = [...(data.tracks?.items ?? [])];
@@ -380,7 +383,7 @@ export async function resolveSpotifyResource(
                 try {
                   const pageRes = await fetch(
                     `https://api.spotify.com/v1/playlists/${id}/tracks?market=VN&limit=100&offset=${offset}&fields=${encodeURIComponent(
-                      "items(track(id,name,duration_ms,artists(name),album(images),external_urls))"
+                      "items(is_local,track(id,name,type,is_local,duration_ms,artists(name),album(images),external_urls))"
                     )}`,
                     {
                       headers: { Authorization: `Bearer ${token}` },
@@ -389,7 +392,10 @@ export async function resolveSpotifyResource(
                   );
                   if (!pageRes.ok) return [];
                   const pageData = (await pageRes.json()) as {
-                    items?: Array<{ track?: SpotifyTrackObject | null }>;
+                    items?: Array<{
+                      is_local?: boolean;
+                      track?: SpotifyTrackObject | null;
+                    }>;
                   };
                   return pageData.items ?? [];
                 } catch {
@@ -403,8 +409,14 @@ export async function resolveSpotifyResource(
           }
 
           const tracks = allRawItems
+            .filter((entry) => !entry?.is_local)
             .map((entry) => entry.track)
-            .filter((t): t is SpotifyTrackObject => Boolean(t?.id))
+            .filter(
+              (t): t is SpotifyTrackObject =>
+                Boolean(t?.id && t?.name) &&
+                !t?.is_local &&
+                (!t?.type || t.type === "track")
+            )
             .map((t) => mapSpotifyTrack(t));
 
           if (tracks.length > 0) {
@@ -490,99 +502,39 @@ export async function resolveSpotifyResource(
   }
 }
 
-function normForScore(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function scoreYouTubeCandidate(
-  cand: UnifiedTrack,
+function pickBestScoredCandidate(
+  candidates: UnifiedTrack[],
   track: UnifiedTrack
-): number {
-  const candTitleLower = cand.title.toLowerCase();
-  const candArtistLower = cand.artist.toLowerCase();
-  const origTitleLower = track.title.toLowerCase();
-  const origArtistNorm = normForScore(track.artist);
-  const candTitleNorm = normForScore(cand.title);
-  const candArtistNorm = normForScore(cand.artist);
-
-  let score = 0;
-
-  // 1. Format priority: Official Audio / Topic > Lyrics Video > Official MV > Artist Channel
-  if (
-    candArtistLower.endsWith(" - topic") ||
-    candTitleLower.includes("official audio")
-  ) {
-    score += 40;
-  } else if (
-    candTitleLower.includes("lyric") ||
-    candTitleLower.includes("audio")
-  ) {
-    score += 30;
-  } else if (
-    candTitleLower.includes("official mv") ||
-    candTitleLower.includes("official music video") ||
-    candTitleLower.includes("official video") ||
-    candTitleLower.includes("music video")
-  ) {
-    score += 25;
-  }
-
-  // 2. Artist channel match boost
-  const primaryArtist = origArtistNorm.split(/\s+/)[0] || "";
-  if (
-    primaryArtist.length >= 2 &&
-    (candArtistNorm.includes(primaryArtist) ||
-      candTitleNorm.includes(primaryArtist))
-  ) {
-    score += 20;
-  }
-
-  // 3. Title token overlap
-  const titleTokens = normForScore(track.title)
-    .split(" ")
-    .filter((w) => w.length >= 2);
-  if (titleTokens.length > 0) {
-    const overlap =
-      titleTokens.filter((w) => candTitleNorm.includes(w)).length /
-      titleTokens.length;
-    score += Math.round(overlap * 35);
-  }
-
-  // 4. Duration proximity (allow up to 45s for Official MVs with intros/outros)
-  if (track.duration > 0 && cand.duration > 0) {
-    const diff = Math.abs(cand.duration - track.duration);
-    if (diff <= 5) score += 30;
-    else if (diff <= 15) score += 20;
-    else if (diff <= 45) score += 10;
-    else if (diff <= 90) score -= 10;
-    else score -= 40;
-  }
-
-  // 5. Soft penalty for remix/cover/live unless original title includes them
-  for (const kw of SOFT_PENALTY_KEYWORDS) {
-    if (candTitleLower.includes(kw) && !origTitleLower.includes(kw)) {
-      score -= 25;
+): { candidate: UnifiedTrack; score: number } | null {
+  let best: { candidate: UnifiedTrack; score: number } | null = null;
+  for (const cand of candidates) {
+    const score = scoreCandidate(
+      {
+        title: cand.title,
+        artist: cand.artist,
+        duration: cand.duration,
+      },
+      {
+        title: track.title,
+        artist: track.artist,
+        duration: track.duration,
+      }
+    );
+    if (score > 0 && (!best || score > best.score)) {
+      best = { candidate: cand, score };
     }
   }
-
-  return score;
+  return best;
 }
 
 /**
- * Smart Multi-Query Spotify Lazy Stream Matching:
- * - Query 1: "[Title] - [Artist] Official Audio"
- * - Query 2 (fallback): "[Title] [Artist]" (catches Official MV, Lyrics Video, Topic)
- * - Query 3 (fallback): "[Title] [PrimaryArtist]"
- * - Duration tolerance <= 45s (accommodates Official MVs with long intros/outros)
- * - Priority: Official Audio / Topic > Lyrics Video > Official MV > Artist Channel
- * - SoundCloud Full Track fallback (duration >= 60s, never 30s previews)
+ * Strict Title & Artist Spotify Lazy Stream Matching (ZERO blind `results[0]` selection):
+ * - Step 1: Search `"${cleanTitle} ${artists}"` (plus `"${cleanTitle} ${primaryArtist}"` in parallel if multi-artist).
+ * - Step 2: Score every candidate via `scoreCandidate()` (diacritic-insensitive Vietnamese matching;
+ *           HARD REQUIREMENT: candidate title MUST contain `cleanTitle`, else `-999`).
+ * - Step 3: Pick highest-scoring candidate ONLY IF `score > 0`.
+ * - Step 4: If none achieved `score > 0`, retry YouTube with `"${cleanTitle} ${primaryArtist} lyrics"`.
+ * - Step 5: Secondary fallback to SoundCloud Full Track (>= 60s, no 30s snippets), also strictly requiring `score > 0`.
  */
 export async function matchSpotifyTrackToAudio(
   track: UnifiedTrack,
@@ -592,110 +544,96 @@ export async function matchSpotifyTrackToAudio(
     return track;
   }
 
-  const originalTitleLower = track.title.toLowerCase();
-  const primaryArtist = track.artist.split(/[,&]/)[0]?.trim() || track.artist;
+  const cleanTitle = cleanSearchTitle(track.title);
+  const fullArtist = track.artist.replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  const primaryArtist = extractPrimaryArtist(track.artist);
 
-  const queries = [
-    `${track.title} - ${track.artist} Official Audio`.trim(),
-    `${track.title} ${track.artist}`.trim(),
-    ...(primaryArtist !== track.artist
-      ? [`${track.title} ${primaryArtist}`.trim()]
-      : []),
-  ];
+  const primaryQuery = `${cleanTitle} ${fullArtist}`.trim();
+  const secondaryQuery =
+    primaryArtist && primaryArtist.toLowerCase() !== fullArtist.toLowerCase()
+      ? `${cleanTitle} ${primaryArtist}`.trim()
+      : `${cleanTitle} ${fullArtist} Official Audio`.trim();
+  const lyricsQuery = `${cleanTitle} ${primaryArtist || fullArtist} lyrics`.trim();
 
   try {
     const seenIds = new Set<string>();
     const allCandidates: UnifiedTrack[] = [];
 
-    // Fast-Path Parallel Racing: run top 2 queries simultaneously in one round-trip (<= 2.5s)
-    const parallelResults = await Promise.allSettled(
-      queries.slice(0, 2).map((q) => searchYouTube(q, 10, credentials?.youtubeApiKey))
-    );
-    for (const r of parallelResults) {
-      if (r.status !== "fulfilled") continue;
-      for (const c of r.value) {
-        if (!seenIds.has(c.id)) {
-          seenIds.add(c.id);
-          allCandidates.push(c);
-        }
-      }
-    }
-
-    // Only run Query 3 (primary artist only) if parallel queries returned 0 results
-    if (allCandidates.length === 0 && queries[2]) {
-      const batch = await searchYouTube(queries[2], 10, credentials?.youtubeApiKey);
+    const addUnique = (batch: UnifiedTrack[]) => {
       for (const c of batch) {
         if (!seenIds.has(c.id)) {
           seenIds.add(c.id);
           allCandidates.push(c);
         }
       }
-    }
+    };
 
-    // Evaluate full combined pool across all queries
-    if (allCandidates.length > 0) {
-      const cleanPool = allCandidates.filter((cand) => {
-        const candLower = cand.title.toLowerCase();
-        return !HARD_NOISE_KEYWORDS.some(
-          (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
-        );
-      });
-
-      const within45s = cleanPool.filter((cand) => {
-        if (track.duration > 0 && cand.duration > 0) {
-          return Math.abs(cand.duration - track.duration) <= 45;
-        }
-        return true;
-      });
-
-      const pool =
-        within45s.length > 0
-          ? within45s
-          : cleanPool.length > 0
-          ? cleanPool
-          : allCandidates;
-
-      const best = [...pool].sort(
-        (a, b) =>
-          scoreYouTubeCandidate(b, track) - scoreYouTubeCandidate(a, track)
-      )[0];
-
-      if (best?.sourceUrl) {
-        return {
-          ...track,
-          duration: track.duration || best.duration,
-          thumbnail: track.thumbnail || best.thumbnail,
-          streamUrl: best.sourceUrl,
-          resolvedSource: "youtube",
-        };
-      }
-    }
-
-    // Secondary fallback: SoundCloud Full Track (strictly >= 60s to exclude 30s Go+ previews)
-    const scCandidates = await searchSoundCloud(
-      `${track.title} ${primaryArtist}`,
-      10
+    // Step 1: Parallel search for exact title + artist
+    const parallelResults = await Promise.allSettled(
+      [primaryQuery, secondaryQuery].map((q) =>
+        searchYouTube(q, 10, credentials?.youtubeApiKey)
+      )
     );
-    const fullSc = scCandidates.filter((c) => {
-      if (c.isSnippet || (c.duration > 0 && c.duration < 60)) return false;
-      const candLower = c.title.toLowerCase();
-      const isHardNoise = HARD_NOISE_KEYWORDS.some(
-        (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
+    for (const r of parallelResults) {
+      if (r.status === "fulfilled") addUnique(r.value);
+    }
+
+    let bestMatch = pickBestScoredCandidate(allCandidates, track);
+
+    // Step 4: If no candidate scored > 0, retry with `"${cleanTitle} ${primaryArtist} lyrics"`
+    if (!bestMatch) {
+      const lyricsBatch = await searchYouTube(
+        lyricsQuery,
+        10,
+        credentials?.youtubeApiKey
       );
-      if (isHardNoise) return false;
-      if (track.duration > 0 && c.duration > 0) {
-        return Math.abs(c.duration - track.duration) <= 45;
-      }
-      return true;
-    });
-    if (fullSc.length > 0) {
+      addUnique(lyricsBatch);
+      bestMatch = pickBestScoredCandidate(allCandidates, track);
+    }
+
+    if (bestMatch?.candidate.sourceUrl) {
+      const { candidate: best, score } = bestMatch;
+      console.log(
+        `[StreamMatch] Spotify: "${track.title} - ${track.artist}" -> Matched: "${best.title}" (ID: ${best.id}, Score: ${score})`
+      );
       return {
         ...track,
-        duration: track.duration || fullSc[0].duration,
-        streamUrl: fullSc[0].sourceUrl,
-        resolvedSource: "soundcloud",
+        duration: track.duration || best.duration,
+        thumbnail: track.thumbnail || best.thumbnail,
+        streamUrl: best.sourceUrl,
+        resolvedSource: "youtube",
+        matchedTitle: best.title,
+        matchScore: score,
       };
     }
+
+    // Step 5: Secondary fallback — SoundCloud Full Track (strictly >= 60s AND `score > 0`)
+    const scCandidates = await searchSoundCloud(
+      `${cleanTitle} ${primaryArtist}`.trim(),
+      10
+    );
+    const fullSc = scCandidates.filter(
+      (c) => !c.isSnippet && (c.duration === 0 || c.duration >= 60)
+    );
+    const bestSc = pickBestScoredCandidate(fullSc, track);
+
+    if (bestSc?.candidate.sourceUrl) {
+      console.log(
+        `[StreamMatch] Spotify (SC): "${track.title} - ${track.artist}" -> Matched: "${bestSc.candidate.title}" (ID: ${bestSc.candidate.id}, Score: ${bestSc.score})`
+      );
+      return {
+        ...track,
+        duration: track.duration || bestSc.candidate.duration,
+        streamUrl: bestSc.candidate.sourceUrl,
+        resolvedSource: "soundcloud",
+        matchedTitle: bestSc.candidate.title,
+        matchScore: bestSc.score,
+      };
+    }
+
+    console.warn(
+      `[StreamMatch] NO STRICT MATCH (score <= 0) for Spotify: "${track.title} - ${track.artist}" (checked ${allCandidates.length} YT + ${fullSc.length} SC)`
+    );
   } catch (error) {
     console.error("[spotify-matcher] matchSpotifyTrackToAudio failed:", error);
   }
