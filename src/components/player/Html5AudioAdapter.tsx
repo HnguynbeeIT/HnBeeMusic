@@ -6,6 +6,7 @@ import {
   useImperativeHandle,
   useRef,
 } from "react";
+import { registerGlobalAudioElement } from "@/lib/audio/ios-unlock";
 import type { EngineHandle } from "./YouTubeAdapter";
 
 interface Html5AudioAdapterProps {
@@ -47,6 +48,12 @@ export const Html5AudioAdapter = forwardRef<
   const isPlayingRef = useRef(isPlaying);
   activeRef.current = active;
   isPlayingRef.current = isPlaying;
+
+  // Register this single global <audio> element for iOS Safari Instant Audio Unlock
+  useEffect(() => {
+    registerGlobalAudioElement(audioRef.current);
+    return () => registerGlobalAudioElement(null);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     play: () => {
@@ -136,7 +143,8 @@ export const Html5AudioAdapter = forwardRef<
     <audio
       ref={audioRef}
       preload="auto"
-      className="hidden"
+      playsInline
+      className="pointer-events-none fixed bottom-0 right-0 h-px w-px opacity-[0.01]"
       onLoadStart={() => {
         if (activeRef.current) onStateChange({ isLoading: true });
       }}

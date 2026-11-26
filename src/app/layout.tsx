@@ -14,6 +14,7 @@ import { ApiSettingsModal } from "@/components/settings/ApiSettingsModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { CloudSyncManager } from "@/components/auth/CloudSyncManager";
 import { CreatePlaylistModal } from "@/components/playlist/CreatePlaylistModal";
+import { IOSInstallBanner } from "@/components/pwa/IOSInstallBanner";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -32,6 +33,10 @@ export const metadata: Metadata = {
   description:
     "Open-source multi-source music streaming client for Spotify, YouTube, and SoundCloud.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -40,6 +45,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
   themeColor: "#09090b",
 };
 
@@ -76,6 +86,7 @@ export default function RootLayout({
           <AuthModal />
           <CreatePlaylistModal />
           <CloudSyncManager />
+          <IOSInstallBanner />
         </MotionProvider>
       </body>
     </html>

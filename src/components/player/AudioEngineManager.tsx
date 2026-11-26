@@ -538,13 +538,16 @@ export function AudioEngineManager() {
       ytFallbackAttemptedRef.current.add(currentTrack.id);
       const reqId = playRequestIdRef.current;
       const trackId = currentTrack.id;
-      // Strict Mode (no allowCrossSource): ONLY extract the exact same YouTube recording via Piped/Invidious
+      const controller = new AbortController();
+      // Tier 1 timeout <= 3.5s -> if slow/unavailable, seamlessly keep playing Tier 2 (YouTube IFrame)
+      const timeout = setTimeout(() => controller.abort(), 3500);
       const params = new URLSearchParams({
         v: youtubeVideoId,
         duration: String(currentTrack.duration || 0),
       });
       fetch(`/api/stream/youtube?${params.toString()}`, {
         headers: getByokHeaders(),
+        signal: controller.signal,
       })
         .then((res) => res.json())
         .then(
@@ -565,7 +568,8 @@ export function AudioEngineManager() {
             }
           }
         )
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => clearTimeout(timeout));
     };
 
     // Proactively use pure HTML5 <audio> on mobile or when Audio Only Mode is enabled
@@ -679,16 +683,24 @@ export function AudioEngineManager() {
       if (reqId !== playRequestIdRef.current) return;
 
       if (reason === "embed_blocked") {
-        setIsPlaying(false);
-        setIsLoading(false);
-        setPlaybackError(
-          "Video YouTube này bị chặn nhúng và chưa tìm thấy luồng âm thanh thay thế."
-        );
+        // Tier 3: Both Tier 1 & Tier 2 failed -> show concise toast & skip to next track if queue has more
+        if (queue.length > 1) {
+          showNotice("Video bị chặn phát nhúng — tự động chuyển bài tiếp theo");
+          playNext(false);
+        } else {
+          setIsPlaying(false);
+          setIsLoading(false);
+          setPlaybackError(
+            "Video YouTube này bị chặn nhúng và chưa tìm thấy luồng âm thanh thay thế."
+          );
+        }
       }
     },
     [
       currentTrack,
       youtubeVideoId,
+      queue.length,
+      playNext,
       setIsLoading,
       setIsPlaying,
       setPlaybackError,

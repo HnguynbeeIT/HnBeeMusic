@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
+  Headphones,
   Heart,
   ListMusic,
   Loader2,
@@ -16,6 +17,7 @@ import {
   SkipForward,
 } from "lucide-react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import {
   BUTTON_MOTION,
   SPRING_PHYSICS,
@@ -46,6 +48,8 @@ export function FullScreenPlayerModal() {
   const toggleLikeTrack = usePlayerStore((s) => s.toggleLikeTrack);
   const setQueueOpen = usePlayerStore((s) => s.setQueueOpen);
   const setLyricsOpen = usePlayerStore((s) => s.setLyricsOpen);
+  const audioOnlyMode = useSettingsStore((s) => s.audioOnlyMode);
+  const toggleAudioOnlyMode = useSettingsStore((s) => s.toggleAudioOnlyMode);
 
   const isLiked = currentTrack
     ? likedTracks.some((t) => t.id === currentTrack.id)
@@ -71,14 +75,14 @@ export function FullScreenPlayerModal() {
             />
           )}
 
-          {/* Top Bar */}
-          <div className="flex items-center justify-between px-5 py-4">
+          {/* Top Bar (iOS Dynamic Island safe-area aware, 44x44px touch targets) */}
+          <div className="flex items-center justify-between px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
             <motion.button
               type="button"
               {...BUTTON_MOTION}
               onClick={() => setFullPlayerOpen(false)}
               aria-label="Thu gọn trình phát"
-              className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-white"
+              className="flex h-11 w-11 items-center justify-center rounded-xl text-zinc-400 hover:bg-white/10 hover:text-white"
             >
               <ChevronDown className="h-6 w-6" />
             </motion.button>
@@ -95,7 +99,21 @@ export function FullScreenPlayerModal() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
+              <motion.button
+                type="button"
+                {...BUTTON_MOTION}
+                onClick={toggleAudioOnlyMode}
+                aria-label="Chế độ Audio Only / Phát nền"
+                title="Chế độ Audio Only / Phát nền"
+                className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${
+                  audioOnlyMode
+                    ? "bg-emerald-500/15 text-emerald-400"
+                    : "text-zinc-400 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Headphones className="h-5 w-5" />
+              </motion.button>
               <motion.button
                 type="button"
                 {...BUTTON_MOTION}
@@ -104,7 +122,7 @@ export function FullScreenPlayerModal() {
                   setLyricsOpen(true);
                 }}
                 aria-label="Mở lời bài hát"
-                className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-white"
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-zinc-400 hover:bg-white/10 hover:text-white"
               >
                 <MicVocal className="h-5 w-5" />
               </motion.button>
@@ -116,15 +134,15 @@ export function FullScreenPlayerModal() {
                   setQueueOpen(true);
                 }}
                 aria-label="Mở hàng đợi"
-                className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-white"
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-zinc-400 hover:bg-white/10 hover:text-white"
               >
                 <ListMusic className="h-5 w-5" />
               </motion.button>
             </div>
           </div>
 
-          {/* Main Content */}
-          <div className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-6 pb-10">
+          {/* Main Content (Home Indicator safe-area bottom padding) */}
+          <div className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
             <motion.div
               layoutId="playerArtwork"
               animate={{ scale: isPlaying ? 1.05 : 1 }}

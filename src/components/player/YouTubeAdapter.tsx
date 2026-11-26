@@ -255,15 +255,20 @@ export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
         modestbranding: 1,
         playsinline: 1,
         rel: 0,
+        ...(typeof window !== "undefined"
+          ? { origin: window.location.origin }
+          : {}),
       },
     };
 
     if (!videoId) return null;
 
+    // Keep iframe in-viewport (1px x 1px, opacity 0.01) — NEVER display:none or off-screen,
+    // otherwise iOS Safari & Chrome throttle/block media playback!
     return (
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed -left-[9999px] -top-[9999px] h-px w-px overflow-hidden opacity-0"
+        className="pointer-events-none fixed bottom-0 right-0 z-0 h-px w-px overflow-hidden opacity-[0.01]"
       >
         <YouTube
           videoId={videoId}
