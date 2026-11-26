@@ -104,6 +104,13 @@ export function AudioEngineManager() {
   const prevEngineRef = useRef<ActiveEngine>(null);
   const matchingIdsRef = useRef<Set<string>>(new Set());
   const ytFallbackAttemptedRef = useRef<Set<string>>(new Set());
+  // Monotonic playback session ID to cancel stale async stream resolutions on iOS Safari
+  const playRequestIdRef = useRef<number>(0);
+
+  // Increment playRequestId immediately whenever the active track changes
+  useEffect(() => {
+    playRequestIdRef.current += 1;
+  }, [currentTrack?.id]);
 
   // SponsorBlock state refs (avoid React re-renders on every 250ms progress tick)
   const sponsorSegmentsRef = useRef<SponsorSegment[]>([]);
@@ -330,8 +337,10 @@ export function AudioEngineManager() {
     const targetScUrl = isSpotifyMatchedSc
       ? currentTrack.streamUrl!
       : currentTrack.sourceUrl;
+    const reqId = playRequestIdRef.current;
+    const targetTrack = currentTrack;
 
-    setScResolvingId(currentTrack.id);
+    setScResolvingId(targetTrack.id);
     setIsLoading(true);
 
     fetch(`/api/stream/soundcloud?url=${encodeURIComponent(targetScUrl)}`, {
@@ -344,6 +353,8 @@ export function AudioEngineManager() {
           streamType?: "progressive" | "hls" | "widget";
           isSnippet?: boolean;
         }) => {
+          if (reqId !== playRequestIdRef.current) return;
+
           // 30s Go+ SNIPPET guard -> upgrade to full-length YouTube clean match
           if (data.isSnippet) {
             try {
@@ -354,11 +365,12 @@ export function AudioEngineManager() {
                   ...getByokHeaders(),
                 },
                 body: JSON.stringify({
-                  matchTrack: { ...currentTrack, isSnippet: true },
+                  matchTrack: { ...targetTrack, isSnippet: true },
                 }),
               });
+              if (reqId !== playRequestIdRef.current) return;
               const upgradeData = (await upgradeRes.json()) as {
-                track?: typeof currentTrack;
+                track?: typeof targetTrack;
               };
               if (
                 upgradeData.track?.streamUrl &&
@@ -373,18 +385,21 @@ export function AudioEngineManager() {
             } catch {}
           }
 
+          if (reqId !== playRequestIdRef.current) return;
+
           if (data.streamUrl && data.streamType === "progressive") {
             updateTrackInStore({
-              ...currentTrack,
+              ...targetTrack,
               streamUrl: data.streamUrl,
             });
           } else {
-            setScWidgetFallbackIds((prev) => new Set(prev).add(currentTrack.id));
+            setScWidgetFallbackIds((prev) => new Set(prev).add(targetTrack.id));
           }
         }
       )
       .catch(() => {
-        setScWidgetFallbackIds((prev) => new Set(prev).add(currentTrack.id));
+        if (reqId !== playRequestIdRef.current) return;
+        setScWidgetFallbackIds((prev) => new Set(prev).add(targetTrack.id));
       })
       .finally(() => {
         setScResolvingId(null);
@@ -410,6 +425,8 @@ export function AudioEngineManager() {
 
     if (matchingIdsRef.current.has(currentTrack.id)) return;
     matchingIdsRef.current.add(currentTrack.id);
+    const reqId = playRequestIdRef.current;
+    const targetTrack = currentTrack;
     setIsLoading(true);
 
     fetch("/api/resolve", {
@@ -418,13 +435,14 @@ export function AudioEngineManager() {
         "Content-Type": "application/json",
         ...getByokHeaders(),
       },
-      body: JSON.stringify({ matchTrack: currentTrack }),
+      body: JSON.stringify({ matchTrack: targetTrack }),
     })
       .then((res) => res.json())
-      .then((data: { track?: typeof currentTrack }) => {
+      .then((data: { track?: typeof targetTrack }) => {
+        // Still cache matched stream on that track in store, but never mutate playing/error state if user switched tracks
         if (data.track?.streamUrl && data.track?.resolvedSource) {
           updateTrackInStore(data.track);
-        } else {
+        } else if (reqId === playRequestIdRef.current) {
           setIsLoading(false);
           setIsPlaying(false);
           setPlaybackError(
@@ -433,12 +451,13 @@ export function AudioEngineManager() {
         }
       })
       .catch(() => {
+        if (reqId !== playRequestIdRef.current) return;
         setIsLoading(false);
         setIsPlaying(false);
         setPlaybackError("Lỗi kết nối khi tìm luồng phát cho bài Spotify.");
       })
       .finally(() => {
-        matchingIdsRef.current.delete(currentTrack.id);
+        matchingIdsRef.current.delete(targetTrack.id);
       });
   }, [
     currentTrack,
@@ -517,11 +536,12 @@ export function AudioEngineManager() {
     const triggerAudioFirst = () => {
       if (ytFallbackAttemptedRef.current.has(currentTrack.id)) return;
       ytFallbackAttemptedRef.current.add(currentTrack.id);
+      const reqId = playRequestIdRef.current;
       const trackId = currentTrack.id;
+      // Strict Mode (no allowCrossSource): ONLY extract the exact same YouTube recording via Piped/Invidious
       const params = new URLSearchParams({
         v: youtubeVideoId,
-        title: currentTrack.title,
-        artist: currentTrack.artist,
+        duration: String(currentTrack.duration || 0),
       });
       fetch(`/api/stream/youtube?${params.toString()}`, {
         headers: getByokHeaders(),
@@ -530,22 +550,16 @@ export function AudioEngineManager() {
         .then(
           (data: {
             streamUrl?: string | null;
-            streamType?:
-              | "direct-audio"
-              | "soundcloud-audio"
-              | "soundcloud-widget"
-              | "none";
+            streamType?: "direct-audio" | "none";
           }) => {
-            if (data.streamUrl) {
+            if (reqId !== playRequestIdRef.current) return;
+            if (data.streamUrl && data.streamType === "direct-audio") {
               setCleanAudioOverrides((prev) => ({
                 ...prev,
                 [trackId]: {
                   url: data.streamUrl!,
-                  engine:
-                    data.streamType === "soundcloud-widget"
-                      ? "soundcloud-widget"
-                      : "html5",
-                  preservesYouTubeTimeline: data.streamType === "direct-audio",
+                  engine: "html5",
+                  preservesYouTubeTimeline: true,
                 },
               }));
             }
@@ -619,6 +633,7 @@ export function AudioEngineManager() {
       }
 
       ytFallbackAttemptedRef.current.add(currentTrack.id);
+      const reqId = playRequestIdRef.current;
       const trackId = currentTrack.id;
 
       try {
@@ -626,10 +641,14 @@ export function AudioEngineManager() {
           v: youtubeVideoId,
           title: currentTrack.title,
           artist: currentTrack.artist,
+          duration: String(currentTrack.duration || 0),
+          // Only allow strictly-verified cross-source match when embed is hard-blocked (101/150)
+          ...(reason === "embed_blocked" ? { allowCrossSource: "1" } : {}),
         });
         const res = await fetch(`/api/stream/youtube?${params.toString()}`, {
           headers: getByokHeaders(),
         });
+        if (reqId !== playRequestIdRef.current) return;
         const data = (await res.json()) as {
           streamUrl?: string | null;
           streamType?:
@@ -656,6 +675,8 @@ export function AudioEngineManager() {
           return;
         }
       } catch {}
+
+      if (reqId !== playRequestIdRef.current) return;
 
       if (reason === "embed_blocked") {
         setIsPlaying(false);

@@ -6,15 +6,19 @@ import { searchSoundCloud } from "./soundcloud";
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 const NOISE_KEYWORDS = [
-  "cover",
   "remix",
+  "cover",
+  "karaoke",
+  "beat",
+  "instrumental",
+  "sped up",
+  "slowed",
+  "nightcore",
   "live",
   "reaction",
-  "karaoke",
-  "nightcore",
-  "slowed",
   "8d audio",
-  "instrumental",
+  "8d",
+  "mashup",
 ];
 
 interface SpotifyArtist {
@@ -461,24 +465,40 @@ export async function matchSpotifyTrackToAudio(
     return track;
   }
 
-  const query = `${track.artist} - ${track.title} Official Audio`.trim();
+  const query = `${track.title} - ${track.artist} Official Audio`.trim();
   const originalTitleLower = track.title.toLowerCase();
 
   try {
     const ytCandidates = await searchYouTube(
       query,
-      8,
+      10,
       credentials?.youtubeApiKey
     );
 
-    const filtered = ytCandidates.filter((cand) => {
+    const noNoise = ytCandidates.filter((cand) => {
       const candLower = cand.title.toLowerCase();
       return !NOISE_KEYWORDS.some(
         (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
       );
     });
 
-    const pool = filtered.length > 0 ? filtered : ytCandidates;
+    // Enforce <= 15s duration tolerance whenever both track & candidate have known duration
+    const durationVerified = noNoise.filter((cand) => {
+      if (track.duration > 0 && cand.duration > 0) {
+        return Math.abs(cand.duration - track.duration) <= 15;
+      }
+      return true;
+    });
+
+    const pool =
+      durationVerified.length > 0
+        ? durationVerified
+        : noNoise.filter((cand) => {
+            if (track.duration > 0 && cand.duration > 0) {
+              return Math.abs(cand.duration - track.duration) <= 30;
+            }
+            return true;
+          });
 
     if (pool.length > 0) {
       const scored = [...pool].sort((a, b) => {
@@ -491,8 +511,8 @@ export async function matchSpotifyTrackToAudio(
             ? Math.abs(b.duration - track.duration)
             : 999;
 
-        const aWithin5s = diffA < 5 ? 0 : 1;
-        const bWithin5s = diffB < 5 ? 0 : 1;
+        const aWithin5s = diffA <= 5 ? 0 : 1;
+        const bWithin5s = diffB <= 5 ? 0 : 1;
         if (aWithin5s !== bWithin5s) return aWithin5s - bWithin5s;
         return diffA - diffB;
       });
@@ -507,11 +527,20 @@ export async function matchSpotifyTrackToAudio(
       };
     }
 
-    // Secondary fallback: SoundCloud (strictly full-length tracks, never 30s Go+ SNIPPET previews)
-    const scCandidates = await searchSoundCloud(`${track.artist} ${track.title}`, 6);
-    const fullSc = scCandidates.filter(
-      (c) => !c.isSnippet && (c.duration === 0 || c.duration > 45)
-    );
+    // Secondary fallback: SoundCloud (strictly full-length, anti-noise, <= 15s duration delta)
+    const scCandidates = await searchSoundCloud(`${track.title} - ${track.artist}`, 8);
+    const fullSc = scCandidates.filter((c) => {
+      if (c.isSnippet || (c.duration > 0 && c.duration <= 45)) return false;
+      const candLower = c.title.toLowerCase();
+      const hasNoise = NOISE_KEYWORDS.some(
+        (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
+      );
+      if (hasNoise) return false;
+      if (track.duration > 0 && c.duration > 0) {
+        return Math.abs(c.duration - track.duration) <= 15;
+      }
+      return true;
+    });
     if (fullSc.length > 0) {
       return {
         ...track,

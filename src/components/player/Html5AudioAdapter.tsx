@@ -63,7 +63,10 @@ export const Html5AudioAdapter = forwardRef<
       el.pause();
       try {
         el.currentTime = 0;
+        el.removeAttribute("src");
+        el.load();
       } catch {}
+      loadedUrlRef.current = null;
     },
     seekTo: (seconds: number) => {
       const el = audioRef.current;
@@ -86,12 +89,28 @@ export const Html5AudioAdapter = forwardRef<
     el.volume = Math.max(0, Math.min(1, volume / 100));
   }, [volume]);
 
-  // Load new stream URL when active
+  // Load new stream URL when active (strict iOS Safari reset before assigning new src)
   useEffect(() => {
     const el = audioRef.current;
-    if (!el || !active || !streamUrl) return;
+    if (!el) return;
+    if (!active || !streamUrl) {
+      if (loadedUrlRef.current) {
+        el.pause();
+        try {
+          el.removeAttribute("src");
+          el.load();
+        } catch {}
+        loadedUrlRef.current = null;
+      }
+      return;
+    }
     if (loadedUrlRef.current !== streamUrl) {
       loadedUrlRef.current = streamUrl;
+      el.pause();
+      try {
+        el.removeAttribute("src");
+        el.load();
+      } catch {}
       el.src = streamUrl;
       el.load();
       if (isPlayingRef.current) {
