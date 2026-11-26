@@ -15,6 +15,7 @@ interface SettingsState extends ApiKeysConfig {
   isAboutOpen: boolean;
   autoSkipSponsor: boolean;
   audioOnlyMode: boolean;
+  crossfadeDuration: number; // seconds: 0 (off), 2, 3, 5, 8
   setSettingsOpen: (open: boolean) => void;
   toggleSettingsOpen: () => void;
   setAboutOpen: (open: boolean) => void;
@@ -22,6 +23,7 @@ interface SettingsState extends ApiKeysConfig {
   setAutoSkipSponsor: (enabled: boolean) => void;
   setAudioOnlyMode: (enabled: boolean) => void;
   toggleAudioOnlyMode: () => void;
+  setCrossfadeDuration: (seconds: number) => void;
   saveKeys: (keys: ApiKeysConfig) => void;
   clearKeys: () => void;
 }
@@ -41,6 +43,7 @@ export const useSettingsStore = create<SettingsState>()(
       isAboutOpen: false,
       autoSkipSponsor: true,
       audioOnlyMode: false,
+      crossfadeDuration: 3,
 
       setSettingsOpen: (open) => set({ isSettingsOpen: open }),
       toggleSettingsOpen: () =>
@@ -51,6 +54,8 @@ export const useSettingsStore = create<SettingsState>()(
       setAudioOnlyMode: (enabled) => set({ audioOnlyMode: enabled }),
       toggleAudioOnlyMode: () =>
         set((s) => ({ audioOnlyMode: !s.audioOnlyMode })),
+      setCrossfadeDuration: (seconds) =>
+        set({ crossfadeDuration: Math.max(0, Math.min(8, Math.round(seconds))) }),
 
       saveKeys: (keys) =>
         set({
@@ -71,6 +76,7 @@ export const useSettingsStore = create<SettingsState>()(
         soundcloudClientId: state.soundcloudClientId,
         autoSkipSponsor: state.autoSkipSponsor,
         audioOnlyMode: state.audioOnlyMode,
+        crossfadeDuration: state.crossfadeDuration,
       }),
     }
   )

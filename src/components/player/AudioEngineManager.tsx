@@ -5,6 +5,7 @@ import { usePlayerStore } from "@/store/usePlayerStore";
 import { usePlaybackTimeStore } from "@/store/usePlaybackTimeStore";
 import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
 import { extractYouTubeId } from "@/lib/audio/url-parser";
+import { smoothVolumeRamp } from "@/lib/audio/crossfade";
 import { useMediaSession } from "@/hooks/useMediaSession";
 import {
   fetchSponsorSegments,
@@ -40,6 +41,7 @@ export function AudioEngineManager() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const queue = usePlayerStore((s) => s.queue);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
+  const repeatMode = usePlayerStore((s) => s.repeatMode);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
@@ -59,9 +61,17 @@ export function AudioEngineManager() {
 
   const autoSkipSponsor = useSettingsStore((s) => s.autoSkipSponsor);
   const audioOnlyMode = useSettingsStore((s) => s.audioOnlyMode);
+  const crossfadeDuration = useSettingsStore((s) => s.crossfadeDuration);
 
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const keepAliveCtxRef = useRef<AudioContext | null>(null);
+  // Smart Gapless Preload & Smooth Crossfade refs
+  const preloadRequestIdRef = useRef<number>(0);
+  const preloadedTrackRef = useRef<{ id: string; ready: boolean } | null>(null);
+  const autoCrossfadeTriggeredRef = useRef<string | null>(null);
+  const pendingFadeInMsRef = useRef<number>(300);
+  const activeRampCancelRef = useRef<(() => void) | null>(null);
+  const [rampedVolume, setRampedVolume] = useState<number | null>(null);
 
   // SSR-safe mobile detection
   useEffect(() => {
@@ -135,6 +145,73 @@ export function AudioEngineManager() {
   >({});
 
   const effectiveVolume = isMuted ? 0 : volume;
+  const outputVolume = rampedVolume !== null ? rampedVolume : effectiveVolume;
+
+  // Determine the immediate next track in queue for Smart Gapless Preload & Auto-Crossfade
+  const upcomingTrack = useMemo(() => {
+    if (!currentTrack || queue.length === 0 || repeatMode === "one") return null;
+    const baseIdx =
+      queue[queueIndex]?.id === currentTrack.id
+        ? queueIndex
+        : queue.findIndex((t) => t.id === currentTrack.id);
+    if (baseIdx < 0) return null;
+    if (baseIdx + 1 < queue.length) return queue[baseIdx + 1];
+    if (repeatMode === "all" && queue.length > 1) return queue[0];
+    return null;
+  }, [currentTrack, queue, queueIndex, repeatMode]);
+
+  // Cancel stale preload & trigger smooth Fade-In whenever active track changes
+  useEffect(() => {
+    preloadRequestIdRef.current += 1;
+    autoCrossfadeTriggeredRef.current = null;
+
+    if (activeRampCancelRef.current) {
+      activeRampCancelRef.current();
+      activeRampCancelRef.current = null;
+    }
+
+    if (!currentTrack || effectiveVolume <= 0) {
+      setRampedVolume(null);
+      return;
+    }
+
+    const fadeInMs = pendingFadeInMsRef.current;
+    pendingFadeInMsRef.current = 300; // Default 300ms gentle Fade-In on manual skip
+
+    if (fadeInMs > 0 && isPlaying) {
+      setRampedVolume(0);
+      activeRampCancelRef.current = smoothVolumeRamp({
+        from: 0,
+        to: effectiveVolume,
+        durationMs: fadeInMs,
+        onStep: (v) => setRampedVolume(v),
+        onComplete: () => {
+          setRampedVolume(null);
+          activeRampCancelRef.current = null;
+        },
+      });
+    } else {
+      setRampedVolume(null);
+    }
+
+    return () => {
+      if (activeRampCancelRef.current) {
+        activeRampCancelRef.current();
+        activeRampCancelRef.current = null;
+      }
+    };
+    // Intentionally triggers on track switch only (user volume slider changes cancel ramp below)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack?.id]);
+
+  // If user manually drags volume slider or toggles mute, immediately honor their volume
+  useEffect(() => {
+    if (activeRampCancelRef.current && autoCrossfadeTriggeredRef.current !== currentTrack?.id) {
+      activeRampCancelRef.current();
+      activeRampCancelRef.current = null;
+      setRampedVolume(null);
+    }
+  }, [effectiveVolume, currentTrack?.id]);
 
   const showNotice = useCallback(
     (message: string) => {
@@ -601,28 +678,188 @@ export function AudioEngineManager() {
     youtubeVideoId,
   ]);
 
-  // Progress handler with integrated SponsorBlock auto-skip
+  // Smart Gapless Preload helper (triggered at 75% progress or last 15s of current track)
+  const triggerGaplessPreload = useCallback(() => {
+    const nextTrack = upcomingTrack;
+    if (!nextTrack) return;
+    if (preloadedTrackRef.current?.id === nextTrack.id) return;
+
+    const preloadId = ++preloadRequestIdRef.current;
+    preloadedTrackRef.current = { id: nextTrack.id, ready: false };
+
+    // 1. Preload unmatched Spotify track -> resolve YouTube/SoundCloud stream in background
+    if (
+      nextTrack.source === "spotify" &&
+      !(nextTrack.streamUrl && nextTrack.resolvedSource)
+    ) {
+      fetch("/api/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getByokHeaders() },
+        body: JSON.stringify({ matchTrack: nextTrack }),
+      })
+        .then((res) => res.json())
+        .then((data: { track?: typeof nextTrack }) => {
+          if (preloadId !== preloadRequestIdRef.current) return;
+          if (data.track?.streamUrl && data.track?.resolvedSource) {
+            updateTrackInStore(data.track);
+            preloadedTrackRef.current = { id: nextTrack.id, ready: true };
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
+    // 2. Preload SoundCloud progressive MP3 stream
+    if (
+      nextTrack.source === "soundcloud" &&
+      !isDirectAudioUrl(nextTrack.streamUrl)
+    ) {
+      fetch(
+        `/api/stream/soundcloud?url=${encodeURIComponent(nextTrack.sourceUrl)}`,
+        { headers: getByokHeaders() }
+      )
+        .then((res) => res.json())
+        .then(
+          (data: {
+            streamUrl?: string;
+            streamType?: "progressive" | "hls" | "widget";
+            isSnippet?: boolean;
+          }) => {
+            if (preloadId !== preloadRequestIdRef.current) return;
+            if (data.streamUrl && data.streamType === "progressive" && !data.isSnippet) {
+              updateTrackInStore({ ...nextTrack, streamUrl: data.streamUrl });
+              preloadedTrackRef.current = { id: nextTrack.id, ready: true };
+            }
+          }
+        )
+        .catch(() => {});
+      return;
+    }
+
+    // 3. Preload direct clean audio for YouTube track on mobile / Audio Only Mode
+    const nextYtId =
+      nextTrack.source === "youtube"
+        ? extractYouTubeId(nextTrack.sourceUrl)
+        : nextTrack.resolvedSource === "youtube" && nextTrack.streamUrl
+        ? extractYouTubeId(nextTrack.streamUrl)
+        : null;
+
+    if (nextYtId && (audioOnlyMode || isMobileDevice)) {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 3500);
+      const params = new URLSearchParams({
+        v: nextYtId,
+        duration: String(nextTrack.duration || 0),
+      });
+      fetch(`/api/stream/youtube?${params.toString()}`, {
+        headers: getByokHeaders(),
+        signal: controller.signal,
+      })
+        .then((res) => res.json())
+        .then(
+          (data: {
+            streamUrl?: string | null;
+            streamType?: "direct-audio" | "none";
+          }) => {
+            if (preloadId !== preloadRequestIdRef.current) return;
+            if (data.streamUrl && data.streamType === "direct-audio") {
+              setCleanAudioOverrides((prev) => ({
+                ...prev,
+                [nextTrack.id]: {
+                  url: data.streamUrl!,
+                  engine: "html5",
+                  preservesYouTubeTimeline: true,
+                },
+              }));
+              preloadedTrackRef.current = { id: nextTrack.id, ready: true };
+            }
+          }
+        )
+        .catch(() => {})
+        .finally(() => clearTimeout(t));
+    }
+  }, [upcomingTrack, audioOnlyMode, isMobileDevice, updateTrackInStore]);
+
+  // Progress handler with integrated SponsorBlock, Smart Gapless Preload & Smooth Auto-Crossfade
   const handleProgress = useCallback(
     (seconds: number) => {
       setProgress(seconds);
 
-      if (!autoSkipSponsor || sponsorSegmentsRef.current.length === 0) return;
-
-      const activeSeg = findActiveSponsorSegment(
-        seconds,
-        sponsorSegmentsRef.current,
-        skippedSponsorKeysRef.current
-      );
-      if (activeSeg) {
-        skippedSponsorKeysRef.current.add(getSponsorSegmentKey(activeSeg));
-        const targetTime = activeSeg.segment[1];
-        seekTo(targetTime);
-        showNotice(
-          `Đã tự động bỏ qua ${getSponsorCategoryLabel(activeSeg.category)} trong MV`
+      // 1. SponsorBlock Auto-Skip
+      if (autoSkipSponsor && sponsorSegmentsRef.current.length > 0) {
+        const activeSeg = findActiveSponsorSegment(
+          seconds,
+          sponsorSegmentsRef.current,
+          skippedSponsorKeysRef.current
         );
+        if (activeSeg) {
+          skippedSponsorKeysRef.current.add(getSponsorSegmentKey(activeSeg));
+          const targetTime = activeSeg.segment[1];
+          seekTo(targetTime);
+          showNotice(
+            `Đã tự động bỏ qua ${getSponsorCategoryLabel(activeSeg.category)} trong MV`
+          );
+          return;
+        }
+      }
+
+      const dur = usePlaybackTimeStore.getState().duration;
+      if (!currentTrack || !Number.isFinite(dur) || dur <= 8) return;
+
+      const remaining = dur - seconds;
+
+      // 2. Smart Gapless Preload at 75% progress or last 15 seconds
+      if (upcomingTrack && (seconds / dur >= 0.75 || remaining <= 15)) {
+        triggerGaplessPreload();
+      }
+
+      // 3. Smooth Auto-Next Crossfade (Fade-Out current -> 0ms switch -> Fade-In preloaded next track)
+      if (
+        crossfadeDuration > 0 &&
+        upcomingTrack &&
+        repeatMode !== "one" &&
+        remaining > 0.35 &&
+        remaining <= crossfadeDuration &&
+        autoCrossfadeTriggeredRef.current !== currentTrack.id
+      ) {
+        autoCrossfadeTriggeredRef.current = currentTrack.id;
+        const fadeOutMs = Math.max(400, Math.min(remaining, crossfadeDuration) * 1000);
+        const startVol = effectiveVolume;
+        const fadeTargetTrackId = currentTrack.id;
+
+        if (activeRampCancelRef.current) {
+          activeRampCancelRef.current();
+          activeRampCancelRef.current = null;
+        }
+
+        activeRampCancelRef.current = smoothVolumeRamp({
+          from: startVol,
+          to: 0,
+          durationMs: fadeOutMs,
+          onStep: (v) => setRampedVolume(v),
+          onComplete: () => {
+            activeRampCancelRef.current = null;
+            if (usePlayerStore.getState().currentTrack?.id === fadeTargetTrackId) {
+              pendingFadeInMsRef.current = Math.min(crossfadeDuration * 600, 1800);
+              playNext(true);
+            }
+          },
+        });
       }
     },
-    [autoSkipSponsor, seekTo, setProgress, showNotice]
+    [
+      autoSkipSponsor,
+      crossfadeDuration,
+      currentTrack,
+      effectiveVolume,
+      playNext,
+      repeatMode,
+      seekTo,
+      setProgress,
+      showNotice,
+      triggerGaplessPreload,
+      upcomingTrack,
+    ]
   );
 
   // YouTube Clean Audio Stream Fallback (when embed is blocked 101/150 or stalled > 4s on pre-roll)
@@ -762,7 +999,7 @@ export function AudioEngineManager() {
         videoId={youtubeVideoId}
         active={activeEngine === "youtube"}
         isPlaying={activeEngine === "youtube" && isPlaying}
-        volume={effectiveVolume}
+        volume={outputVolume}
         onProgress={handleProgress}
         onDuration={setDuration}
         onStateChange={handleStateChange}
@@ -775,7 +1012,7 @@ export function AudioEngineManager() {
         streamUrl={html5StreamUrl}
         active={activeEngine === "html5"}
         isPlaying={activeEngine === "html5" && isPlaying}
-        volume={effectiveVolume}
+        volume={outputVolume}
         onProgress={handleProgress}
         onDuration={setDuration}
         onStateChange={handleStateChange}
@@ -787,7 +1024,7 @@ export function AudioEngineManager() {
         trackUrl={soundCloudWidgetUrl}
         active={activeEngine === "soundcloud-widget"}
         isPlaying={activeEngine === "soundcloud-widget" && isPlaying}
-        volume={effectiveVolume}
+        volume={outputVolume}
         onProgress={handleProgress}
         onDuration={setDuration}
         onStateChange={handleStateChange}
