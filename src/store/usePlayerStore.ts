@@ -32,6 +32,7 @@ interface PlayerState {
 
   // Playback actions
   playTrack: (track: UnifiedTrack, newQueue?: UnifiedTrack[]) => void;
+  playPlaylist: (tracks: UnifiedTrack[], startIndex?: number) => void;
   togglePlay: () => void;
   setIsPlaying: (playing: boolean) => void;
   setIsLoading: (loading: boolean) => void;
@@ -133,6 +134,27 @@ export const usePlayerStore = create<PlayerState>()(
         });
       },
 
+      playPlaylist: (tracks, startIndex = 0) => {
+        if (!Array.isArray(tracks) || tracks.length === 0) return;
+        const safeIndex = Math.max(
+          0,
+          Math.min(Math.floor(startIndex), tracks.length - 1)
+        );
+        const targetTrack = tracks[safeIndex];
+        set({
+          currentTrack: targetTrack,
+          sourceType: targetTrack.source,
+          queue: [...tracks],
+          queueIndex: safeIndex,
+          isPlaying: true,
+          isLoading: true,
+          progress: 0,
+          duration: targetTrack.duration || 0,
+          seekTarget: null,
+          playbackError: null,
+        });
+      },
+
       togglePlay: () => {
         const { currentTrack, isPlaying } = get();
         if (!currentTrack) return;
@@ -159,13 +181,20 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
+        // Re-sync effectiveIndex to currentTrack.id to prevent queue desync after shuffle/edits
+        const effectiveIndex =
+          queue[queueIndex]?.id === currentTrack.id
+            ? queueIndex
+            : queue.findIndex((t) => t.id === currentTrack.id);
+        const baseIdx = effectiveIndex >= 0 ? effectiveIndex : queueIndex;
+
         let nextIdx = -1;
         if (isShuffle && queue.length > 1) {
           do {
             nextIdx = Math.floor(Math.random() * queue.length);
-          } while (nextIdx === queueIndex);
-        } else if (queueIndex + 1 < queue.length) {
-          nextIdx = queueIndex + 1;
+          } while (nextIdx === baseIdx);
+        } else if (baseIdx + 1 < queue.length) {
+          nextIdx = baseIdx + 1;
         } else if (repeatMode === "all") {
           nextIdx = 0;
         }
@@ -201,7 +230,13 @@ export const usePlayerStore = create<PlayerState>()(
 
         if (queue.length === 0) return;
 
-        let prevIdx = queueIndex - 1;
+        const effectiveIndex =
+          queue[queueIndex]?.id === currentTrack.id
+            ? queueIndex
+            : queue.findIndex((t) => t.id === currentTrack.id);
+        const baseIdx = effectiveIndex >= 0 ? effectiveIndex : queueIndex;
+
+        let prevIdx = baseIdx - 1;
         if (prevIdx < 0) {
           prevIdx = repeatMode === "all" ? queue.length - 1 : 0;
         }

@@ -17,6 +17,23 @@ const INVIDIOUS_INSTANCES = [
   "https://yewtu.be",
 ];
 
+const NOISE_KEYWORDS = [
+  "remix",
+  "cover",
+  "karaoke",
+  "beat",
+  "instrumental",
+  "sped up",
+  "slowed",
+  "nightcore",
+  "live",
+  "reaction",
+  "8d",
+  "mashup",
+  "nonstop",
+  "playlist",
+];
+
 interface PipedAudioStream {
   url?: string;
   mimeType?: string;
@@ -30,18 +47,71 @@ interface InvidiousAdaptiveFormat {
   bitrate?: string | number;
 }
 
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/\(official.*?\)|\[official.*?\]|official music video|official mv|official audio|audio video|lyric video/gi, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isStrictAudioMatch(
+  candidateTitle: string,
+  candidateDuration: number,
+  expectedTitle: string,
+  expectedDuration: number
+): boolean {
+  const origLower = expectedTitle.toLowerCase();
+  const candLower = candidateTitle.toLowerCase();
+
+  // 1. Reject noise keywords unless present in original track title
+  for (const kw of NOISE_KEYWORDS) {
+    if (candLower.includes(kw) && !origLower.includes(kw)) {
+      return false;
+    }
+  }
+
+  // 2. Strict duration tolerance (<= 15s) when both durations are known
+  if (expectedDuration > 0 && candidateDuration > 0) {
+    if (Math.abs(candidateDuration - expectedDuration) > 15) {
+      return false;
+    }
+  }
+
+  // 3. Require >= 50% normalized title token overlap to prevent unrelated tracks
+  const origTokens = normalizeForMatch(expectedTitle)
+    .split(" ")
+    .filter((w) => w.length >= 2);
+  if (origTokens.length > 0) {
+    const candNorm = normalizeForMatch(candidateTitle);
+    const matchedCount = origTokens.filter((tok) => candNorm.includes(tok)).length;
+    if (matchedCount / origTokens.length < 0.5) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 async function fetchWithTimeout(
   url: string,
-  timeoutMs = 3500
+  timeoutMs = 3000,
+  init?: RequestInit
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
+      ...init,
       signal: controller.signal,
       headers: {
         Accept: "application/json",
         "User-Agent": "HnBeeMusic/1.0",
+        ...(init?.headers || {}),
       },
       cache: "no-store",
     });
@@ -107,15 +177,18 @@ async function extractFromInvidious(
 }
 
 /**
- * Clean Audio Stream Fallback for YouTube videos:
- * 1. Races Piped & Invidious direct audio-only streams in parallel (<= 3s)
- * 2. Falls back to matching a clean full-length SoundCloud track (progressive MP3 or clean track URL)
+ * Clean Audio Stream Fallback for YouTube videos (iOS Audio-First & Embed Blocked):
+ * - Priority 1: Extract the EXACT same recording from `videoId` via Piped / Invidious (100% same audio).
+ * - Priority 2 (only when `allowCrossSource=1` AND strict duration <= 15s + anti-remix/cover filter passes):
+ *   match a verified full-length SoundCloud track. Never returns an unverified or wrong song!
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const videoId = (searchParams.get("v") || "").trim();
   const title = (searchParams.get("title") || "").trim();
   const artist = (searchParams.get("artist") || "").trim();
+  const expectedDuration = Number(searchParams.get("duration") || "0") || 0;
+  const allowCrossSource = searchParams.get("allowCrossSource") === "1";
 
   if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
     return NextResponse.json(
@@ -125,7 +198,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Tier 1 + 2 in parallel: Piped & Invidious direct audio streams
+    // Priority 1: Direct audio-only stream of the EXACT YouTube videoId (100% same track)
     try {
       const direct = await Promise.any([
         extractFromPiped(videoId),
@@ -140,35 +213,35 @@ export async function GET(request: NextRequest) {
         { headers: { "Cache-Control": "private, max-age=300" } }
       );
     } catch {
-      // Proceed to Tier 3 SoundCloud clean match
+      // Direct extraction unavailable
     }
 
-    // Tier 3: Clean full-length SoundCloud match (never 30s Go+ SNIPPET)
-    if (title) {
+    // Priority 2: Cross-source SoundCloud fallback ONLY when explicitly allowed (e.g. embed_blocked 101/150)
+    // AND strictly verified against noise keywords + <= 15s duration delta + title token overlap.
+    if (allowCrossSource && title) {
       const scClientId =
         request.headers.get("x-soundcloud-client-id")?.trim() || undefined;
-      const cleanQuery = `${artist} ${title}`
+      const cleanQuery = `${title} - ${artist}`
         .replace(
           /\(official.*?\)|\[official.*?\]|official music video|official mv|official audio/gi,
           ""
         )
         .trim();
 
-      const candidates = await searchSoundCloud(cleanQuery, 6, scClientId);
-      const fullCandidates = candidates.filter(
-        (c) => !c.isSnippet && (c.duration === 0 || c.duration > 45)
+      const candidates = await searchSoundCloud(cleanQuery, 8, scClientId);
+      const verifiedCandidates = candidates.filter(
+        (c) =>
+          !c.isSnippet &&
+          (c.duration === 0 || c.duration > 45) &&
+          isStrictAudioMatch(c.title, c.duration, title, expectedDuration)
       );
 
-      let firstCleanScTrackUrl: string | null = null;
-      for (const cand of fullCandidates.slice(0, 2)) {
+      for (const cand of verifiedCandidates.slice(0, 2)) {
         const resolved = await resolveSoundCloudStream(
           cand.sourceUrl,
           scClientId
         );
         if (resolved.isSnippet) continue;
-        if (!firstCleanScTrackUrl) {
-          firstCleanScTrackUrl = cand.sourceUrl;
-        }
         if (resolved.streamUrl && resolved.streamType === "progressive") {
           return NextResponse.json(
             {
@@ -179,17 +252,6 @@ export async function GET(request: NextRequest) {
             { headers: { "Cache-Control": "private, max-age=300" } }
           );
         }
-      }
-
-      if (firstCleanScTrackUrl) {
-        return NextResponse.json(
-          {
-            streamUrl: firstCleanScTrackUrl,
-            streamType: "soundcloud-widget",
-            provider: "soundcloud-fallback",
-          },
-          { headers: { "Cache-Control": "private, max-age=300" } }
-        );
       }
     }
 
