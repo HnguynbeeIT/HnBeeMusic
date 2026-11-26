@@ -5,21 +5,19 @@ import { searchSoundCloud } from "./soundcloud";
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-const NOISE_KEYWORDS = [
-  "remix",
-  "cover",
+// Strictly excluded noise keywords (unless present in original Spotify track title)
+const HARD_NOISE_KEYWORDS = [
   "karaoke",
   "beat",
   "instrumental",
+  "reaction",
+  "8d",
+  "nightcore",
   "sped up",
   "slowed",
-  "nightcore",
-  "live",
-  "reaction",
-  "8d audio",
-  "8d",
-  "mashup",
 ];
+
+const SOFT_PENALTY_KEYWORDS = ["cover", "remix", "live", "mashup"];
 
 interface SpotifyArtist {
   name: string;
@@ -451,11 +449,99 @@ export async function resolveSpotifyResource(
   }
 }
 
+function normForScore(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreYouTubeCandidate(
+  cand: UnifiedTrack,
+  track: UnifiedTrack
+): number {
+  const candTitleLower = cand.title.toLowerCase();
+  const candArtistLower = cand.artist.toLowerCase();
+  const origTitleLower = track.title.toLowerCase();
+  const origArtistNorm = normForScore(track.artist);
+  const candTitleNorm = normForScore(cand.title);
+  const candArtistNorm = normForScore(cand.artist);
+
+  let score = 0;
+
+  // 1. Format priority: Official Audio / Topic > Lyrics Video > Official MV > Artist Channel
+  if (
+    candArtistLower.endsWith(" - topic") ||
+    candTitleLower.includes("official audio")
+  ) {
+    score += 40;
+  } else if (
+    candTitleLower.includes("lyric") ||
+    candTitleLower.includes("audio")
+  ) {
+    score += 30;
+  } else if (
+    candTitleLower.includes("official mv") ||
+    candTitleLower.includes("official music video") ||
+    candTitleLower.includes("official video") ||
+    candTitleLower.includes("music video")
+  ) {
+    score += 25;
+  }
+
+  // 2. Artist channel match boost
+  const primaryArtist = origArtistNorm.split(/\s+/)[0] || "";
+  if (
+    primaryArtist.length >= 2 &&
+    (candArtistNorm.includes(primaryArtist) ||
+      candTitleNorm.includes(primaryArtist))
+  ) {
+    score += 20;
+  }
+
+  // 3. Title token overlap
+  const titleTokens = normForScore(track.title)
+    .split(" ")
+    .filter((w) => w.length >= 2);
+  if (titleTokens.length > 0) {
+    const overlap =
+      titleTokens.filter((w) => candTitleNorm.includes(w)).length /
+      titleTokens.length;
+    score += Math.round(overlap * 35);
+  }
+
+  // 4. Duration proximity (allow up to 45s for Official MVs with intros/outros)
+  if (track.duration > 0 && cand.duration > 0) {
+    const diff = Math.abs(cand.duration - track.duration);
+    if (diff <= 5) score += 30;
+    else if (diff <= 15) score += 20;
+    else if (diff <= 45) score += 10;
+    else if (diff <= 90) score -= 10;
+    else score -= 40;
+  }
+
+  // 5. Soft penalty for remix/cover/live unless original title includes them
+  for (const kw of SOFT_PENALTY_KEYWORDS) {
+    if (candTitleLower.includes(kw) && !origTitleLower.includes(kw)) {
+      score -= 25;
+    }
+  }
+
+  return score;
+}
+
 /**
- * Lazy Stream Matching per spotify-matcher skill:
- * - Query: "[Artist] - [Title] Official Audio"
- * - Prefer candidates with duration delta < 5s
- * - Filter out noise keywords (cover, remix, live, reaction...) unless present in original title
+ * Smart Multi-Query Spotify Lazy Stream Matching:
+ * - Query 1: "[Title] - [Artist] Official Audio"
+ * - Query 2 (fallback): "[Title] [Artist]" (catches Official MV, Lyrics Video, Topic)
+ * - Query 3 (fallback): "[Title] [PrimaryArtist]"
+ * - Duration tolerance <= 45s (accommodates Official MVs with long intros/outros)
+ * - Priority: Official Audio / Topic > Lyrics Video > Official MV > Artist Channel
+ * - SoundCloud Full Track fallback (duration >= 60s, never 30s previews)
  */
 export async function matchSpotifyTrackToAudio(
   track: UnifiedTrack,
@@ -465,79 +551,115 @@ export async function matchSpotifyTrackToAudio(
     return track;
   }
 
-  const query = `${track.title} - ${track.artist} Official Audio`.trim();
   const originalTitleLower = track.title.toLowerCase();
+  const primaryArtist = track.artist.split(/[,&]/)[0]?.trim() || track.artist;
+
+  const queries = [
+    `${track.title} - ${track.artist} Official Audio`.trim(),
+    `${track.title} ${track.artist}`.trim(),
+    ...(primaryArtist !== track.artist
+      ? [`${track.title} ${primaryArtist}`.trim()]
+      : []),
+  ];
 
   try {
-    const ytCandidates = await searchYouTube(
-      query,
-      10,
-      credentials?.youtubeApiKey
-    );
+    const seenIds = new Set<string>();
+    const allCandidates: UnifiedTrack[] = [];
 
-    const noNoise = ytCandidates.filter((cand) => {
-      const candLower = cand.title.toLowerCase();
-      return !NOISE_KEYWORDS.some(
-        (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
-      );
-    });
-
-    // Enforce <= 15s duration tolerance whenever both track & candidate have known duration
-    const durationVerified = noNoise.filter((cand) => {
-      if (track.duration > 0 && cand.duration > 0) {
-        return Math.abs(cand.duration - track.duration) <= 15;
+    for (const q of queries) {
+      const batch = await searchYouTube(q, 10, credentials?.youtubeApiKey);
+      for (const c of batch) {
+        if (!seenIds.has(c.id)) {
+          seenIds.add(c.id);
+          allCandidates.push(c);
+        }
       }
-      return true;
-    });
 
-    const pool =
-      durationVerified.length > 0
-        ? durationVerified
-        : noNoise.filter((cand) => {
-            if (track.duration > 0 && cand.duration > 0) {
-              return Math.abs(cand.duration - track.duration) <= 30;
-            }
-            return true;
-          });
-
-    if (pool.length > 0) {
-      const scored = [...pool].sort((a, b) => {
-        const diffA =
-          track.duration > 0 && a.duration > 0
-            ? Math.abs(a.duration - track.duration)
-            : 999;
-        const diffB =
-          track.duration > 0 && b.duration > 0
-            ? Math.abs(b.duration - track.duration)
-            : 999;
-
-        const aWithin5s = diffA <= 5 ? 0 : 1;
-        const bWithin5s = diffB <= 5 ? 0 : 1;
-        if (aWithin5s !== bWithin5s) return aWithin5s - bWithin5s;
-        return diffA - diffB;
+      // Check if we already have a strong candidate within <= 45s without hard noise
+      const strong = allCandidates.filter((cand) => {
+        const candLower = cand.title.toLowerCase();
+        const isHardNoise = HARD_NOISE_KEYWORDS.some(
+          (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
+        );
+        if (isHardNoise) return false;
+        if (track.duration > 0 && cand.duration > 0) {
+          return Math.abs(cand.duration - track.duration) <= 45;
+        }
+        return cand.duration === 0 || (cand.duration >= 60 && cand.duration <= 600);
       });
 
-      const best = scored[0];
-      return {
-        ...track,
-        duration: track.duration || best.duration,
-        thumbnail: track.thumbnail || best.thumbnail,
-        streamUrl: best.sourceUrl,
-        resolvedSource: "youtube",
-      };
+      if (strong.length > 0) {
+        const best = [...strong].sort(
+          (a, b) =>
+            scoreYouTubeCandidate(b, track) - scoreYouTubeCandidate(a, track)
+        )[0];
+
+        // If first query yielded a high-confidence match (score >= 45), stop early!
+        if (scoreYouTubeCandidate(best, track) >= 45) {
+          return {
+            ...track,
+            duration: track.duration || best.duration,
+            thumbnail: track.thumbnail || best.thumbnail,
+            streamUrl: best.sourceUrl,
+            resolvedSource: "youtube",
+          };
+        }
+      }
     }
 
-    // Secondary fallback: SoundCloud (strictly full-length, anti-noise, <= 15s duration delta)
-    const scCandidates = await searchSoundCloud(`${track.title} - ${track.artist}`, 8);
+    // Evaluate full combined pool across all queries
+    if (allCandidates.length > 0) {
+      const cleanPool = allCandidates.filter((cand) => {
+        const candLower = cand.title.toLowerCase();
+        return !HARD_NOISE_KEYWORDS.some(
+          (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
+        );
+      });
+
+      const within45s = cleanPool.filter((cand) => {
+        if (track.duration > 0 && cand.duration > 0) {
+          return Math.abs(cand.duration - track.duration) <= 45;
+        }
+        return true;
+      });
+
+      const pool =
+        within45s.length > 0
+          ? within45s
+          : cleanPool.length > 0
+          ? cleanPool
+          : allCandidates;
+
+      const best = [...pool].sort(
+        (a, b) =>
+          scoreYouTubeCandidate(b, track) - scoreYouTubeCandidate(a, track)
+      )[0];
+
+      if (best?.sourceUrl) {
+        return {
+          ...track,
+          duration: track.duration || best.duration,
+          thumbnail: track.thumbnail || best.thumbnail,
+          streamUrl: best.sourceUrl,
+          resolvedSource: "youtube",
+        };
+      }
+    }
+
+    // Secondary fallback: SoundCloud Full Track (strictly >= 60s to exclude 30s Go+ previews)
+    const scCandidates = await searchSoundCloud(
+      `${track.title} ${primaryArtist}`,
+      10
+    );
     const fullSc = scCandidates.filter((c) => {
-      if (c.isSnippet || (c.duration > 0 && c.duration <= 45)) return false;
+      if (c.isSnippet || (c.duration > 0 && c.duration < 60)) return false;
       const candLower = c.title.toLowerCase();
-      const hasNoise = NOISE_KEYWORDS.some(
+      const isHardNoise = HARD_NOISE_KEYWORDS.some(
         (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
       );
-      if (hasNoise) return false;
+      if (isHardNoise) return false;
       if (track.duration > 0 && c.duration > 0) {
-        return Math.abs(c.duration - track.duration) <= 15;
+        return Math.abs(c.duration - track.duration) <= 45;
       }
       return true;
     });
