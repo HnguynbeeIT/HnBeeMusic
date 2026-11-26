@@ -99,25 +99,28 @@ function isStrictAudioMatch(
 
 async function fetchWithTimeout(
   url: string,
-  timeoutMs = 3000,
+  timeoutMs = 2500,
   init?: RequestInit
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "HnBeeMusic/1.0",
-        ...(init?.headers || {}),
-      },
-      cache: "no-store",
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+  const signal =
+    typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(timeoutMs)
+      : (() => {
+          const c = new AbortController();
+          setTimeout(() => c.abort(), timeoutMs);
+          return c.signal;
+        })();
+
+  return fetch(url, {
+    ...init,
+    signal,
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "HnBeeMusic/1.0",
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
 }
 
 async function extractFromPiped(
@@ -125,7 +128,7 @@ async function extractFromPiped(
 ): Promise<{ streamUrl: string; provider: string }> {
   return Promise.any(
     PIPED_INSTANCES.map(async (base) => {
-      const res = await fetchWithTimeout(`${base}/streams/${videoId}`, 3000);
+      const res = await fetchWithTimeout(`${base}/streams/${videoId}`, 2500);
       if (!res.ok) throw new Error("piped non-ok");
       const data = (await res.json()) as {
         audioStreams?: PipedAudioStream[];
@@ -151,7 +154,7 @@ async function extractFromInvidious(
     INVIDIOUS_INSTANCES.map(async (base) => {
       const res = await fetchWithTimeout(
         `${base}/api/v1/videos/${videoId}?fields=adaptiveFormats`,
-        3000
+        2500
       );
       if (!res.ok) throw new Error("invidious non-ok");
       const data = (await res.json()) as {

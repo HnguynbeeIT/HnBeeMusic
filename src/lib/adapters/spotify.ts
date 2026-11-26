@@ -349,8 +349,10 @@ export async function resolveSpotifyResource(
       }
 
       if (resourceType === "playlist") {
+        const fields =
+          "name,tracks(total,items(track(id,name,duration_ms,artists(name),album(images),external_urls)))";
         const res = await fetch(
-          `https://api.spotify.com/v1/playlists/${id}?market=VN&fields=name,tracks.items(track(id,name,duration_ms,artists(name),album(images),external_urls))`,
+          `https://api.spotify.com/v1/playlists/${id}?market=VN&fields=${encodeURIComponent(fields)}`,
           {
             headers: { Authorization: `Bearer ${token}` },
             next: { revalidate: 1800 },
@@ -359,9 +361,48 @@ export async function resolveSpotifyResource(
         if (res.ok) {
           const data = (await res.json()) as {
             name?: string;
-            tracks?: { items?: Array<{ track?: SpotifyTrackObject | null }> };
+            tracks?: {
+              total?: number;
+              items?: Array<{ track?: SpotifyTrackObject | null }>;
+            };
           };
-          const tracks = (data.tracks?.items ?? [])
+          const allRawItems = [...(data.tracks?.items ?? [])];
+          const total = Math.min(data.tracks?.total ?? allRawItems.length, 500);
+
+          // Parallel pagination via Promise.all for playlists with > 100 tracks
+          if (total > 100) {
+            const offsets: number[] = [];
+            for (let offset = 100; offset < total; offset += 100) {
+              offsets.push(offset);
+            }
+            const pageResults = await Promise.all(
+              offsets.map(async (offset) => {
+                try {
+                  const pageRes = await fetch(
+                    `https://api.spotify.com/v1/playlists/${id}/tracks?market=VN&limit=100&offset=${offset}&fields=${encodeURIComponent(
+                      "items(track(id,name,duration_ms,artists(name),album(images),external_urls))"
+                    )}`,
+                    {
+                      headers: { Authorization: `Bearer ${token}` },
+                      next: { revalidate: 1800 },
+                    }
+                  );
+                  if (!pageRes.ok) return [];
+                  const pageData = (await pageRes.json()) as {
+                    items?: Array<{ track?: SpotifyTrackObject | null }>;
+                  };
+                  return pageData.items ?? [];
+                } catch {
+                  return [];
+                }
+              })
+            );
+            for (const items of pageResults) {
+              allRawItems.push(...items);
+            }
+          }
+
+          const tracks = allRawItems
             .map((entry) => entry.track)
             .filter((t): t is SpotifyTrackObject => Boolean(t?.id))
             .map((t) => mapSpotifyTrack(t));
@@ -566,43 +607,27 @@ export async function matchSpotifyTrackToAudio(
     const seenIds = new Set<string>();
     const allCandidates: UnifiedTrack[] = [];
 
-    for (const q of queries) {
-      const batch = await searchYouTube(q, 10, credentials?.youtubeApiKey);
-      for (const c of batch) {
+    // Fast-Path Parallel Racing: run top 2 queries simultaneously in one round-trip (<= 2.5s)
+    const parallelResults = await Promise.allSettled(
+      queries.slice(0, 2).map((q) => searchYouTube(q, 10, credentials?.youtubeApiKey))
+    );
+    for (const r of parallelResults) {
+      if (r.status !== "fulfilled") continue;
+      for (const c of r.value) {
         if (!seenIds.has(c.id)) {
           seenIds.add(c.id);
           allCandidates.push(c);
         }
       }
+    }
 
-      // Check if we already have a strong candidate within <= 45s without hard noise
-      const strong = allCandidates.filter((cand) => {
-        const candLower = cand.title.toLowerCase();
-        const isHardNoise = HARD_NOISE_KEYWORDS.some(
-          (kw) => candLower.includes(kw) && !originalTitleLower.includes(kw)
-        );
-        if (isHardNoise) return false;
-        if (track.duration > 0 && cand.duration > 0) {
-          return Math.abs(cand.duration - track.duration) <= 45;
-        }
-        return cand.duration === 0 || (cand.duration >= 60 && cand.duration <= 600);
-      });
-
-      if (strong.length > 0) {
-        const best = [...strong].sort(
-          (a, b) =>
-            scoreYouTubeCandidate(b, track) - scoreYouTubeCandidate(a, track)
-        )[0];
-
-        // If first query yielded a high-confidence match (score >= 45), stop early!
-        if (scoreYouTubeCandidate(best, track) >= 45) {
-          return {
-            ...track,
-            duration: track.duration || best.duration,
-            thumbnail: track.thumbnail || best.thumbnail,
-            streamUrl: best.sourceUrl,
-            resolvedSource: "youtube",
-          };
+    // Only run Query 3 (primary artist only) if parallel queries returned 0 results
+    if (allCandidates.length === 0 && queries[2]) {
+      const batch = await searchYouTube(queries[2], 10, credentials?.youtubeApiKey);
+      for (const c of batch) {
+        if (!seenIds.has(c.id)) {
+          seenIds.add(c.id);
+          allCandidates.push(c);
         }
       }
     }
