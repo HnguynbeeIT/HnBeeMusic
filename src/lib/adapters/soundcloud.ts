@@ -234,12 +234,22 @@ export async function resolveSoundCloudStream(
           };
         }
 
-        // Prefer progressive MP3 for clean ad-free native HTML5 <audio> playback
+        // Prefer progressive MP3 first, then iOS-native HLS AAC (audio/mp4) or MP3 (avoid Opus/OGG on iOS Safari)
         const progressive = transcodings.find(
           (t) => t.format?.protocol === "progressive"
         );
-        const hls = transcodings.find((t) => t.format?.protocol === "hls");
-        const chosen = progressive || hls;
+        const hlsAac = transcodings.find(
+          (t) =>
+            t.format?.protocol === "hls" &&
+            /mp4|aac/i.test(t.format?.mime_type || "")
+        );
+        const hlsMp3 = transcodings.find(
+          (t) =>
+            t.format?.protocol === "hls" &&
+            /mpeg/i.test(t.format?.mime_type || "")
+        );
+        const hlsAny = transcodings.find((t) => t.format?.protocol === "hls");
+        const chosen = progressive || hlsAac || hlsMp3 || hlsAny;
 
         if (chosen?.url) {
           const streamReqUrl = new URL(chosen.url);

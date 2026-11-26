@@ -4,9 +4,7 @@ import { useEffect, useRef } from "react";
 import type { UnifiedTrack } from "@/lib/audio/types";
 import { usePlaybackTimeStore } from "@/store/usePlaybackTimeStore";
 
-interface UseMediaSessionParams {
-  currentTrack: UnifiedTrack | null;
-  isPlaying: boolean;
+interface MediaSessionHandlers {
   onPlay: () => void;
   onPause: () => void;
   onPrev: () => void;
@@ -14,14 +12,76 @@ interface UseMediaSessionParams {
   onSeekTo: (seconds: number) => void;
 }
 
+interface UseMediaSessionParams extends MediaSessionHandlers {
+  currentTrack: UnifiedTrack | null;
+  isPlaying: boolean;
+}
+
 const ARTWORK_SIZES = [
-  "96x96",
-  "128x128",
-  "192x192",
-  "256x256",
-  "384x384",
   "512x512",
+  "384x384",
+  "256x256",
+  "192x192",
+  "128x128",
+  "96x96",
 ];
+
+function safeSetActionHandler(
+  action: MediaSessionAction,
+  handler: MediaSessionActionHandler | null
+): void {
+  if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+  try {
+    navigator.mediaSession.setActionHandler(action, handler);
+  } catch {}
+}
+
+/**
+ * Synchronously pushes metadata (including 512x512 artwork), playbackState = 'playing',
+ * and Control Center / Lock Screen action handlers directly inside the native `<audio>` `playing` event
+ * so iOS recognizes HnBee Music as an active background audio session immediately.
+ */
+export function syncMediaSessionOnPlaying(
+  track: UnifiedTrack | null,
+  handlers: MediaSessionHandlers
+): void {
+  if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+    return;
+  }
+
+  if (track && typeof MediaMetadata !== "undefined") {
+    const artworkSrc = track.thumbnail || "/icon.png";
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title || "HnBee Music",
+        artist: track.artist || "Unknown Artist",
+        album: "HnBee Music",
+        artwork: ARTWORK_SIZES.map((sizes) => ({
+          src: artworkSrc,
+          sizes,
+          type: artworkSrc.endsWith(".png") ? "image/png" : "image/jpeg",
+        })),
+      });
+    } catch {}
+  }
+
+  try {
+    navigator.mediaSession.playbackState = "playing";
+  } catch {}
+
+  safeSetActionHandler("play", handlers.onPlay);
+  safeSetActionHandler("pause", handlers.onPause);
+  safeSetActionHandler("previoustrack", handlers.onPrev);
+  safeSetActionHandler("nexttrack", handlers.onNext);
+  safeSetActionHandler("seekto", (details) => {
+    if (
+      typeof details.seekTime === "number" &&
+      Number.isFinite(details.seekTime)
+    ) {
+      handlers.onSeekTo(Math.max(0, details.seekTime));
+    }
+  });
+}
 
 /**
  * SSR-safe Media Session API integration for iOS Lock Screen, Dynamic Island,
@@ -61,20 +121,11 @@ export function useMediaSession({
       } catch {}
     }
 
-    const safeSetHandler = (
-      action: MediaSessionAction,
-      handler: MediaSessionActionHandler | null
-    ) => {
-      try {
-        navigator.mediaSession.setActionHandler(action, handler);
-      } catch {}
-    };
-
-    safeSetHandler("play", onPlay);
-    safeSetHandler("pause", onPause);
-    safeSetHandler("previoustrack", onPrev);
-    safeSetHandler("nexttrack", onNext);
-    safeSetHandler("seekto", (details) => {
+    safeSetActionHandler("play", onPlay);
+    safeSetActionHandler("pause", onPause);
+    safeSetActionHandler("previoustrack", onPrev);
+    safeSetActionHandler("nexttrack", onNext);
+    safeSetActionHandler("seekto", (details) => {
       if (
         typeof details.seekTime === "number" &&
         Number.isFinite(details.seekTime)
@@ -82,12 +133,12 @@ export function useMediaSession({
         onSeekTo(Math.max(0, details.seekTime));
       }
     });
-    safeSetHandler("seekbackward", (details) => {
+    safeSetActionHandler("seekbackward", (details) => {
       const offset = details.seekOffset || 10;
       const currentPos = usePlaybackTimeStore.getState().progress;
       onSeekTo(Math.max(0, currentPos - offset));
     });
-    safeSetHandler("seekforward", (details) => {
+    safeSetActionHandler("seekforward", (details) => {
       const offset = details.seekOffset || 10;
       const { progress, duration } = usePlaybackTimeStore.getState();
       const target =
@@ -108,7 +159,7 @@ export function useMediaSession({
         "seekforward",
       ];
       for (const action of actions) {
-        safeSetHandler(action, null);
+        safeSetActionHandler(action, null);
       }
     };
   }, [currentTrack, onNext, onPause, onPlay, onPrev, onSeekTo]);
