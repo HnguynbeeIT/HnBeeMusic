@@ -13,6 +13,18 @@ let globalAudioEl: HTMLAudioElement | null = null;
 let audioUnlocked = false;
 let listenersAttached = false;
 
+/**
+ * Reliable iOS / iPadOS detection (covers iPhone, iPod, iPad, and iPadOS desktop-mode Safari).
+ */
+export function isIOSDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return (
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
 export function registerGlobalAudioElement(el: HTMLAudioElement | null): void {
   globalAudioEl = el;
   if (typeof window === "undefined" || listenersAttached) return;
@@ -84,12 +96,9 @@ export function unlockGlobalAudioNow(): void {
       playPromise
         .then(() => {
           audioUnlocked = true;
-          if (!prevSrc) {
+          // Only pause if the element is still holding our temporary silent WAV (never interrupt a real stream!)
+          if (!prevSrc && el.src.startsWith("data:audio/wav")) {
             el.pause();
-            try {
-              el.removeAttribute("src");
-              el.load();
-            } catch {}
           }
         })
         .catch(() => {

@@ -6,8 +6,18 @@ import { usePlaybackTimeStore } from "@/store/usePlaybackTimeStore";
 import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
 import { extractYouTubeId } from "@/lib/audio/url-parser";
 import { smoothVolumeRamp } from "@/lib/audio/crossfade";
-import { getCachedStream, setCachedStream } from "@/lib/audio/stream-cache";
-import { useMediaSession } from "@/hooks/useMediaSession";
+import { isIOSDevice } from "@/lib/audio/ios-unlock";
+import {
+  clearCachedDirectAudioUrl,
+  getCachedDirectAudioUrl,
+  getCachedStream,
+  setCachedDirectAudioUrl,
+  setCachedStream,
+} from "@/lib/audio/stream-cache";
+import {
+  syncMediaSessionOnPlaying,
+  useMediaSession,
+} from "@/hooks/useMediaSession";
 import {
   fetchSponsorSegments,
   findActiveSponsorSegment,
@@ -16,7 +26,10 @@ import {
   type SponsorSegment,
 } from "@/lib/sponsorblock";
 import { YouTubeAdapter, type EngineHandle } from "./YouTubeAdapter";
-import { Html5AudioAdapter } from "./Html5AudioAdapter";
+import {
+  Html5AudioAdapter,
+  type Html5EngineHandle,
+} from "./Html5AudioAdapter";
 import { SoundCloudAdapter } from "./SoundCloudAdapter";
 
 type ActiveEngine = "youtube" | "html5" | "soundcloud-widget" | null;
@@ -24,19 +37,22 @@ type ActiveEngine = "youtube" | "html5" | "soundcloud-widget" | null;
 function isDirectAudioUrl(url?: string): boolean {
   if (!url) return false;
   return (
-    /\.(mp3|m4a|ogg|wav|aac|flac)(\?.*)?$/i.test(url) ||
-    /cf-media\.sndcdn\.com|media\.soundcloud\.com|audio\.sndcdn\.com/i.test(url)
+    url.startsWith("/api/proxy-audio") ||
+    /\.(mp3|m4a|ogg|wav|aac|flac|opus|m3u8)(\?.*)?$/i.test(url) ||
+    /cf-media\.sndcdn\.com|media\.soundcloud\.com|audio\.sndcdn\.com|soundcloud\.cloud|discoveryprovider\.audius\.co\/v1\/tracks\/[^/]+\/stream/i.test(
+      url
+    )
   );
 }
 
 /**
  * Unified Audio Engine Manager mounted ONCE in RootLayout (src/app/layout.tsx).
- * - YouTube Engine: privacy-enhanced youtube-nocookie.com IFrame + Clean Audio Fallback (Piped/Invidious/SoundCloud)
- * - SponsorBlock Auto-Skip: automatically seeks past ads, intros, outros, and non-music MV segments
- * - HTML5 Audio Engine: native <audio> for ad-free SoundCloud progressive MP3 & clean YouTube audio streams
- * - SoundCloud 30s Snippet Guard: upgrades Go+ 30s previews to full-length tracks automatically
- * - Single Active Engine: immediately pauses & resets (currentTime = 0) all inactive engines
- * - Media Session API: keyboard media keys & mobile lock-screen controls
+ * - iOS Mode (iPhone / iPad): Strictly enforces native HTML5 `<audio>` via `/api/audio-stream`
+ *   (InnerTube iOS .m4a -> `/api/proxy-audio` + SoundCloud + Audius 3-source parallel race).
+ *   NEVER mounts or uses YouTube Video IFrame on iOS so Home Screen & Lock Screen playback never stops!
+ * - Desktop / Android Mode: privacy-enhanced youtube-nocookie.com IFrame + Clean Audio Fallback + SponsorBlock.
+ * - Single Active Engine: immediately pauses & resets all inactive engines (zero double-audio).
+ * - Media Session API: Lock Screen, Dynamic Island, Control Center & Desktop Media Keys.
  */
 export function AudioEngineManager() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -64,8 +80,10 @@ export function AudioEngineManager() {
   const audioOnlyMode = useSettingsStore((s) => s.audioOnlyMode);
   const crossfadeDuration = useSettingsStore((s) => s.crossfadeDuration);
 
+  const [isIOS, setIsIOS] = useState(false);
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const keepAliveCtxRef = useRef<AudioContext | null>(null);
+
   // Smart Gapless Preload & Smooth Crossfade refs
   const preloadRequestIdRef = useRef<number>(0);
   const preloadedTrackRef = useRef<{ id: string; ready: boolean } | null>(null);
@@ -74,13 +92,15 @@ export function AudioEngineManager() {
   const activeRampCancelRef = useRef<(() => void) | null>(null);
   const [rampedVolume, setRampedVolume] = useState<number | null>(null);
 
-  // SSR-safe mobile detection
+  // SSR-safe iOS & mobile detection
   useEffect(() => {
     if (typeof navigator === "undefined") return;
-    setIsMobileDevice(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+    const ios = isIOSDevice();
+    setIsIOS(ios);
+    setIsMobileDevice(ios || /Android/i.test(navigator.userAgent));
   }, []);
 
-  // Lightweight Silent AudioContext keep-alive during track transitions so iOS/Android never revoke background playback
+  // Lightweight Silent AudioContext keep-alive during track transitions so iOS/Android retain background audio session
   useEffect(() => {
     if (typeof window === "undefined" || !isPlaying || !currentTrack) return;
     try {
@@ -96,8 +116,11 @@ export function AudioEngineManager() {
       if (ctx.state === "suspended") {
         void ctx.resume().catch(() => {});
       }
-      // Schedule a 200ms silent buffer pulse on track start/switch to retain audio session focus
-      const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.2)), ctx.sampleRate);
+      const buffer = ctx.createBuffer(
+        1,
+        Math.max(1, Math.floor(ctx.sampleRate * 0.2)),
+        ctx.sampleRate
+      );
       const source = ctx.createBufferSource();
       const gain = ctx.createGain();
       gain.gain.value = 0;
@@ -109,12 +132,14 @@ export function AudioEngineManager() {
   }, [currentTrack?.id, isPlaying]);
 
   const ytRef = useRef<EngineHandle | null>(null);
-  const html5Ref = useRef<EngineHandle | null>(null);
+  const html5Ref = useRef<Html5EngineHandle | null>(null);
   const scWidgetRef = useRef<EngineHandle | null>(null);
   const prevEngineRef = useRef<ActiveEngine>(null);
   const matchingIdsRef = useRef<Set<string>>(new Set());
   const ytFallbackAttemptedRef = useRef<Set<string>>(new Set());
-  // Monotonic playback session ID to cancel stale async stream resolutions on iOS Safari
+  const iosAudioInFlightRef = useRef<Set<string>>(new Set());
+  const iosAudioRetriedRef = useRef<Set<string>>(new Set());
+  // Monotonic playback session ID to cancel stale async stream resolutions
   const playRequestIdRef = useRef<number>(0);
 
   // Increment playRequestId immediately whenever the active track changes
@@ -127,13 +152,13 @@ export function AudioEngineManager() {
   const skippedSponsorKeysRef = useRef<Set<string>>(new Set());
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track IDs that fell back to SoundCloud Widget after HTML5 stream extraction failed
+  // Track IDs that fell back to SoundCloud Widget after HTML5 stream extraction failed (non-iOS)
   const [scWidgetFallbackIds, setScWidgetFallbackIds] = useState<Set<string>>(
     () => new Set()
   );
   const [scResolvingId, setScResolvingId] = useState<string | null>(null);
 
-  // Direct clean audio URL overrides (Piped / Invidious / SoundCloud clean fallback for YouTube)
+  // Direct clean audio URL overrides (iOS `/api/audio-stream`, Piped/Invidious/SoundCloud)
   const [cleanAudioOverrides, setCleanAudioOverrides] = useState<
     Record<
       string,
@@ -179,7 +204,8 @@ export function AudioEngineManager() {
     const fadeInMs = pendingFadeInMsRef.current;
     pendingFadeInMsRef.current = 300; // Default 300ms gentle Fade-In on manual skip
 
-    if (fadeInMs > 0 && isPlaying) {
+    // On iOS, HTML5 audio.volume is read-only (controlled by hardware buttons), so skip JS volume ramping
+    if (!isIOS && fadeInMs > 0 && isPlaying) {
       setRampedVolume(0);
       activeRampCancelRef.current = smoothVolumeRamp({
         from: 0,
@@ -201,13 +227,16 @@ export function AudioEngineManager() {
         activeRampCancelRef.current = null;
       }
     };
-    // Intentionally triggers on track switch only (user volume slider changes cancel ramp below)
+    // Intentionally triggers on track switch only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack?.id]);
 
   // If user manually drags volume slider or toggles mute, immediately honor their volume
   useEffect(() => {
-    if (activeRampCancelRef.current && autoCrossfadeTriggeredRef.current !== currentTrack?.id) {
+    if (
+      activeRampCancelRef.current &&
+      autoCrossfadeTriggeredRef.current !== currentTrack?.id
+    ) {
       activeRampCancelRef.current();
       activeRampCancelRef.current = null;
       setRampedVolume(null);
@@ -230,6 +259,49 @@ export function AudioEngineManager() {
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
     };
   }, []);
+
+  // Helper: fetch direct audio-only URL from `/api/audio-stream` (3-source parallel race, 3.5s server timeout)
+  const fetchDirectAudioStreamForTrack = useCallback(
+    async (
+      track: NonNullable<typeof currentTrack>,
+      ytId: string | null,
+      signal?: AbortSignal
+    ): Promise<{
+      streamUrl: string;
+      preservesYouTubeTimeline: boolean;
+    } | null> => {
+      const params = new URLSearchParams();
+      if (ytId) params.set("id", ytId);
+      if (track.title) params.set("title", track.title);
+      if (track.artist) params.set("artist", track.artist);
+      if (track.duration > 0) params.set("duration", String(track.duration));
+      if (
+        track.source === "soundcloud" ||
+        (track.resolvedSource === "soundcloud" && track.streamUrl)
+      ) {
+        params.set(
+          "scUrl",
+          track.source === "soundcloud" ? track.sourceUrl : track.streamUrl!
+        );
+      }
+
+      const res = await fetch(`/api/audio-stream?${params.toString()}`, {
+        headers: getByokHeaders(),
+        signal,
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        streamUrl?: string | null;
+        preservesYouTubeTimeline?: boolean;
+      };
+      if (!data.streamUrl) return null;
+      return {
+        streamUrl: data.streamUrl,
+        preservesYouTubeTimeline: Boolean(data.preservesYouTubeTimeline),
+      };
+    },
+    []
+  );
 
   // Determine active playback engine & resolved media target
   const {
@@ -256,10 +328,10 @@ export function AudioEngineManager() {
         ? extractYouTubeId(currentTrack.streamUrl)
         : null;
 
-    // 0. Clean Audio Stream Override (Piped/Invidious/SoundCloud fallback for blocked/stalled YouTube)
+    // 0. Clean Direct Audio Stream Override (iOS `/api/audio-stream` or Desktop/Android fallback)
     const cleanOverride = cleanAudioOverrides[currentTrack.id];
     if (cleanOverride?.url) {
-      if (cleanOverride.engine === "soundcloud-widget") {
+      if (!isIOS && cleanOverride.engine === "soundcloud-widget") {
         return {
           activeEngine: "soundcloud-widget" as ActiveEngine,
           youtubeVideoId: null,
@@ -279,10 +351,10 @@ export function AudioEngineManager() {
       };
     }
 
-    // 1. Direct HTML5 audio stream (SoundCloud extracted progressive MP3 or direct audio URL)
+    // 1. Direct HTML5 audio stream (SoundCloud progressive MP3 / HLS or /api/proxy-audio)
     if (
       isDirectAudioUrl(currentTrack.streamUrl) &&
-      !scWidgetFallbackIds.has(currentTrack.id)
+      (!scWidgetFallbackIds.has(currentTrack.id) || isIOS)
     ) {
       return {
         activeEngine: "html5" as ActiveEngine,
@@ -293,7 +365,19 @@ export function AudioEngineManager() {
       };
     }
 
-    // 2. YouTube native track (or SoundCloud 30s snippet upgraded to full YouTube track)
+    // iOS STRICT RULE: NEVER use YouTube Video IFrame or SoundCloud IFrame on iPhone/iPad!
+    // Hold in loading state while `/api/audio-stream` fetches direct HTML5 <audio> URL (~800ms or 0ms cached).
+    if (isIOS) {
+      return {
+        activeEngine: null as ActiveEngine,
+        youtubeVideoId: ytIdForTrack,
+        sponsorBlockVideoId: ytIdForTrack,
+        html5StreamUrl: null,
+        soundCloudWidgetUrl: null,
+      };
+    }
+
+    // 2. YouTube native track (Desktop / Android)
     if (
       currentTrack.source === "youtube" ||
       (currentTrack.resolvedSource === "youtube" && currentTrack.streamUrl)
@@ -307,7 +391,7 @@ export function AudioEngineManager() {
       };
     }
 
-    // 3. SoundCloud track (waits for progressive MP3 extraction or snippet upgrade, else falls back to Widget)
+    // 3. SoundCloud track (Desktop / Android)
     if (currentTrack.source === "soundcloud") {
       if (scWidgetFallbackIds.has(currentTrack.id)) {
         return {
@@ -327,7 +411,7 @@ export function AudioEngineManager() {
       };
     }
 
-    // 4. Spotify track matched to SoundCloud -> wait for progressive MP3 extraction first, then Widget fallback
+    // 4. Spotify track matched to SoundCloud (Desktop / Android)
     if (
       currentTrack.resolvedSource === "soundcloud" &&
       currentTrack.streamUrl
@@ -357,7 +441,7 @@ export function AudioEngineManager() {
       html5StreamUrl: null,
       soundCloudWidgetUrl: null,
     };
-  }, [currentTrack, scWidgetFallbackIds, cleanAudioOverrides]);
+  }, [currentTrack, scWidgetFallbackIds, cleanAudioOverrides, isIOS]);
 
   // SPONSORBLOCK: fetch skip segments whenever a YouTube videoId becomes active
   useEffect(() => {
@@ -378,7 +462,7 @@ export function AudioEngineManager() {
     };
   }, [sponsorBlockVideoId, autoSkipSponsor]);
 
-  // Cleanup AudioContext on unmount to prevent memory leaks
+  // Cleanup AudioContext on unmount
   useEffect(() => {
     return () => {
       if (keepAliveCtxRef.current) {
@@ -388,17 +472,120 @@ export function AudioEngineManager() {
     };
   }, []);
 
-  // SINGLE ACTIVE ENGINE (Zero Double-Audio): pause & reset ALL inactive engines immediately
+  // SINGLE ACTIVE ENGINE (Zero Double-Audio): pause & reset inactive engines immediately
   useEffect(() => {
     if (activeEngine !== "youtube") ytRef.current?.stopAndReset();
-    if (activeEngine !== "html5") html5Ref.current?.stopAndReset();
+    if (activeEngine !== "html5") {
+      // On iOS, NEVER strip `<audio>` src while briefly resolving next track's direct audio URL
+      if (!isIOS || !currentTrack) {
+        html5Ref.current?.stopAndReset();
+      }
+    }
     if (activeEngine !== "soundcloud-widget") scWidgetRef.current?.stopAndReset();
     prevEngineRef.current = activeEngine;
-  }, [activeEngine]);
+  }, [activeEngine, isIOS, currentTrack]);
 
-  // SOUNDCLOUD STREAM RESOLUTION: extract ad-free progressive MP3, upgrade 30s Go+ SNIPPET to full YouTube match
+  // iOS MANDATORY DIRECT AUDIO-ONLY RESOLVER (`/api/audio-stream` -> native HTML5 `<audio>`)
   useEffect(() => {
-    if (!currentTrack) return;
+    if (!isIOS || !currentTrack) return;
+    if (cleanAudioOverrides[currentTrack.id]?.url) return;
+    if (isDirectAudioUrl(currentTrack.streamUrl)) return;
+
+    // For unmatched Spotify tracks, wait for the fast Spotify matcher to supply youtubeId/streamUrl first
+    // (unless it already has a cached direct audio URL in localStorage!)
+    const cachedDirect = getCachedDirectAudioUrl(currentTrack.id);
+    if (cachedDirect) {
+      setCleanAudioOverrides((prev) => ({
+        ...prev,
+        [currentTrack.id]: {
+          url: cachedDirect,
+          engine: "html5",
+          preservesYouTubeTimeline: Boolean(youtubeVideoId),
+        },
+      }));
+      return;
+    }
+
+    if (
+      currentTrack.source === "spotify" &&
+      !(currentTrack.streamUrl && currentTrack.resolvedSource)
+    ) {
+      return;
+    }
+
+    if (iosAudioInFlightRef.current.has(currentTrack.id)) return;
+    iosAudioInFlightRef.current.add(currentTrack.id);
+
+    const reqId = playRequestIdRef.current;
+    const targetTrack = currentTrack;
+    const targetYtId = youtubeVideoId;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+
+    setIsLoading(true);
+
+    fetchDirectAudioStreamForTrack(targetTrack, targetYtId, controller.signal)
+      .then((result) => {
+        if (reqId !== playRequestIdRef.current) return;
+        if (result?.streamUrl) {
+          setCachedDirectAudioUrl(targetTrack.id, result.streamUrl, {
+            streamUrl: targetTrack.streamUrl || targetTrack.sourceUrl,
+            resolvedSource:
+              targetTrack.resolvedSource ||
+              (targetTrack.source === "soundcloud" ? "soundcloud" : "youtube"),
+            youtubeId: targetYtId || undefined,
+          });
+          setCleanAudioOverrides((prev) => ({
+            ...prev,
+            [targetTrack.id]: {
+              url: result.streamUrl,
+              engine: "html5",
+              preservesYouTubeTimeline: result.preservesYouTubeTimeline,
+            },
+          }));
+          setPlaybackError(null);
+        } else {
+          setIsLoading(false);
+          if (queue.length > 1) {
+            showNotice(
+              "Không lấy được luồng Audio iOS cho bài này — tự động chuyển bài tiếp theo"
+            );
+            playNext(false);
+          } else {
+            setIsPlaying(false);
+            setPlaybackError(
+              "Chưa thể giải mã luồng âm thanh nền iOS cho bài hát này."
+            );
+          }
+        }
+      })
+      .catch(() => {
+        if (reqId !== playRequestIdRef.current) return;
+        setIsLoading(false);
+        setIsPlaying(false);
+        setPlaybackError("Kết nối quá hạn khi tải luồng âm thanh nền iOS.");
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        iosAudioInFlightRef.current.delete(targetTrack.id);
+      });
+  }, [
+    isIOS,
+    currentTrack,
+    cleanAudioOverrides,
+    youtubeVideoId,
+    fetchDirectAudioStreamForTrack,
+    setIsLoading,
+    setIsPlaying,
+    setPlaybackError,
+    showNotice,
+    queue.length,
+    playNext,
+  ]);
+
+  // SOUNDCLOUD STREAM RESOLUTION (Desktop / Android): extract ad-free progressive MP3, upgrade 30s Go+ SNIPPET
+  useEffect(() => {
+    if (!currentTrack || isIOS) return;
 
     const isNativeSc =
       currentTrack.source === "soundcloud" &&
@@ -439,7 +626,6 @@ export function AudioEngineManager() {
         }) => {
           if (reqId !== playRequestIdRef.current) return;
 
-          // 30s Go+ SNIPPET guard -> upgrade to full-length YouTube clean match
           if (data.isSnippet) {
             try {
               const upgradeRes = await fetch("/api/resolve", {
@@ -489,6 +675,7 @@ export function AudioEngineManager() {
         setScResolvingId(null);
       });
   }, [
+    isIOS,
     currentTrack,
     scWidgetFallbackIds,
     scResolvingId,
@@ -581,6 +768,16 @@ export function AudioEngineManager() {
       return;
     }
 
+    const cachedNext = getCachedStream(nextTrack.id);
+    if (cachedNext) {
+      updateTrackInStore({
+        ...nextTrack,
+        streamUrl: cachedNext.streamUrl,
+        resolvedSource: cachedNext.resolvedSource,
+      });
+      return;
+    }
+
     matchingIdsRef.current.add(nextTrack.id);
     fetch("/api/resolve", {
       method: "POST",
@@ -593,6 +790,14 @@ export function AudioEngineManager() {
       .then((res) => res.json())
       .then((data: { track?: typeof nextTrack }) => {
         if (data.track?.streamUrl && data.track?.resolvedSource) {
+          setCachedStream(nextTrack.id, {
+            youtubeId:
+              data.track.resolvedSource === "youtube"
+                ? extractYouTubeId(data.track.streamUrl) || undefined
+                : undefined,
+            streamUrl: data.track.streamUrl,
+            resolvedSource: data.track.resolvedSource,
+          });
           updateTrackInStore(data.track);
         }
       })
@@ -613,9 +818,17 @@ export function AudioEngineManager() {
     clearSeekTarget();
   }, [seekTarget, activeEngine, clearSeekTarget]);
 
-  // MEDIA SESSION API (Lock Screen iOS/Android, Dynamic Island, Desktop Media Keys)
-  const handleMediaPlay = useCallback(() => setIsPlaying(true), [setIsPlaying]);
-  const handleMediaPause = useCallback(() => setIsPlaying(false), [setIsPlaying]);
+  // MEDIA SESSION API (Lock Screen iOS/Android, Control Center, Dynamic Island, Desktop Media Keys)
+  const handleMediaPlay = useCallback(() => {
+    setIsPlaying(true);
+    if (activeEngine === "html5") html5Ref.current?.play();
+  }, [setIsPlaying, activeEngine]);
+
+  const handleMediaPause = useCallback(() => {
+    setIsPlaying(false);
+    if (activeEngine === "html5") html5Ref.current?.pause();
+  }, [setIsPlaying, activeEngine]);
+
   const handleMediaNext = useCallback(() => playNext(false), [playNext]);
 
   useMediaSession({
@@ -628,9 +841,27 @@ export function AudioEngineManager() {
     onSeekTo: seekTo,
   });
 
-  // AUDIO-FIRST / BACKGROUND BYPASS (Mobile iOS/Android, Audio Only Mode, or tab hidden)
+  // Immediately reinforce navigator.mediaSession inside the native `<audio>` `playing` event for iOS Control Center & Lock Screen
+  const handleHtml5Playing = useCallback(() => {
+    syncMediaSessionOnPlaying(currentTrack, {
+      onPlay: handleMediaPlay,
+      onPause: handleMediaPause,
+      onPrev: playPrev,
+      onNext: handleMediaNext,
+      onSeekTo: seekTo,
+    });
+  }, [
+    currentTrack,
+    handleMediaNext,
+    handleMediaPause,
+    handleMediaPlay,
+    playPrev,
+    seekTo,
+  ]);
+
+  // AUDIO-FIRST / BACKGROUND BYPASS for Android & Desktop Audio-Only Mode (non-iOS; iOS already uses `/api/audio-stream` exclusively)
   useEffect(() => {
-    if (!currentTrack || !youtubeVideoId) return;
+    if (isIOS || !currentTrack || !youtubeVideoId) return;
     if (cleanAudioOverrides[currentTrack.id]) return;
 
     const triggerAudioFirst = () => {
@@ -639,46 +870,35 @@ export function AudioEngineManager() {
       const reqId = playRequestIdRef.current;
       const trackId = currentTrack.id;
       const controller = new AbortController();
-      // Strict 2.5s timeout -> YouTube IFrame Player plays immediately without waiting!
+      // Strict 2.5s timeout -> YouTube IFrame Player continues immediately on Desktop/Android
       const timeout = setTimeout(() => controller.abort(), 2500);
-      const params = new URLSearchParams({
-        v: youtubeVideoId,
-        duration: String(currentTrack.duration || 0),
-      });
-      fetch(`/api/stream/youtube?${params.toString()}`, {
-        headers: getByokHeaders(),
-        signal: controller.signal,
-      })
-        .then((res) => res.json())
-        .then(
-          (data: {
-            streamUrl?: string | null;
-            streamType?: "direct-audio" | "none";
-          }) => {
-            if (reqId !== playRequestIdRef.current) return;
-            if (data.streamUrl && data.streamType === "direct-audio") {
-              setCleanAudioOverrides((prev) => ({
-                ...prev,
-                [trackId]: {
-                  url: data.streamUrl!,
-                  engine: "html5",
-                  preservesYouTubeTimeline: true,
-                },
-              }));
-            }
+      fetchDirectAudioStreamForTrack(
+        currentTrack,
+        youtubeVideoId,
+        controller.signal
+      )
+        .then((result) => {
+          if (reqId !== playRequestIdRef.current) return;
+          if (result?.streamUrl) {
+            setCleanAudioOverrides((prev) => ({
+              ...prev,
+              [trackId]: {
+                url: result.streamUrl,
+                engine: "html5",
+                preservesYouTubeTimeline: result.preservesYouTubeTimeline,
+              },
+            }));
           }
-        )
+        })
         .catch(() => {})
         .finally(() => clearTimeout(timeout));
     };
 
-    // Proactively use pure HTML5 <audio> on mobile or when Audio Only Mode is enabled
     if (audioOnlyMode || isMobileDevice) {
       triggerAudioFirst();
       return;
     }
 
-    // On desktop, also upgrade to HTML5 <audio> if the tab goes into background while playing
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden" && isPlaying) {
         triggerAudioFirst();
@@ -689,36 +909,96 @@ export function AudioEngineManager() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [
+    isIOS,
     audioOnlyMode,
     cleanAudioOverrides,
     currentTrack,
+    fetchDirectAudioStreamForTrack,
     isMobileDevice,
     isPlaying,
     youtubeVideoId,
   ]);
 
-  // Smart Gapless Preload helper (triggered at 75% progress or last 15s of current track)
+  // Smart Gapless Preload helper (triggered at 3s AND >= 70% / last 15s of current track)
   const triggerGaplessPreload = useCallback(() => {
     const nextTrack = upcomingTrack;
     if (!nextTrack) return;
+    if (preloadedTrackRef.current?.id === nextTrack.id && preloadedTrackRef.current.ready) {
+      return;
+    }
     if (preloadedTrackRef.current?.id === nextTrack.id) return;
 
     const preloadId = ++preloadRequestIdRef.current;
     preloadedTrackRef.current = { id: nextTrack.id, ready: false };
 
-    // 1. Preload unmatched Spotify track -> check 0ms localStorage cache first, else resolve & persist
+    const preloadDirectAudioForNext = (
+      resolvedNext: typeof nextTrack,
+      nextYtId: string | null
+    ) => {
+      if (!isIOS && !audioOnlyMode && !isMobileDevice) {
+        preloadedTrackRef.current = { id: resolvedNext.id, ready: true };
+        return;
+      }
+      const cachedDirect = getCachedDirectAudioUrl(resolvedNext.id);
+      if (cachedDirect) {
+        setCleanAudioOverrides((prev) => ({
+          ...prev,
+          [resolvedNext.id]: {
+            url: cachedDirect,
+            engine: "html5",
+            preservesYouTubeTimeline: Boolean(nextYtId),
+          },
+        }));
+        preloadedTrackRef.current = { id: resolvedNext.id, ready: true };
+        return;
+      }
+
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 4500);
+      fetchDirectAudioStreamForTrack(resolvedNext, nextYtId, controller.signal)
+        .then((result) => {
+          if (preloadId !== preloadRequestIdRef.current) return;
+          if (result?.streamUrl) {
+            setCachedDirectAudioUrl(resolvedNext.id, result.streamUrl, {
+              streamUrl: resolvedNext.streamUrl || resolvedNext.sourceUrl,
+              resolvedSource:
+                resolvedNext.resolvedSource ||
+                (resolvedNext.source === "soundcloud" ? "soundcloud" : "youtube"),
+              youtubeId: nextYtId || undefined,
+            });
+            setCleanAudioOverrides((prev) => ({
+              ...prev,
+              [resolvedNext.id]: {
+                url: result.streamUrl,
+                engine: "html5",
+                preservesYouTubeTimeline: result.preservesYouTubeTimeline,
+              },
+            }));
+            preloadedTrackRef.current = { id: resolvedNext.id, ready: true };
+          }
+        })
+        .catch(() => {})
+        .finally(() => clearTimeout(t));
+    };
+
+    // 1. Preload unmatched Spotify track -> 0ms cache first, else resolve & chain iOS direct audio preload!
     if (
       nextTrack.source === "spotify" &&
       !(nextTrack.streamUrl && nextTrack.resolvedSource)
     ) {
       const cachedNext = getCachedStream(nextTrack.id);
       if (cachedNext) {
-        updateTrackInStore({
+        const enriched = {
           ...nextTrack,
           streamUrl: cachedNext.streamUrl,
           resolvedSource: cachedNext.resolvedSource,
-        });
-        preloadedTrackRef.current = { id: nextTrack.id, ready: true };
+        };
+        updateTrackInStore(enriched);
+        const ytId =
+          cachedNext.resolvedSource === "youtube"
+            ? cachedNext.youtubeId || extractYouTubeId(cachedNext.streamUrl)
+            : null;
+        preloadDirectAudioForNext(enriched, ytId);
         return;
       }
 
@@ -731,27 +1011,32 @@ export function AudioEngineManager() {
         .then((data: { track?: typeof nextTrack }) => {
           if (preloadId !== preloadRequestIdRef.current) return;
           if (data.track?.streamUrl && data.track?.resolvedSource) {
+            const ytId =
+              data.track.resolvedSource === "youtube"
+                ? extractYouTubeId(data.track.streamUrl)
+                : null;
             setCachedStream(nextTrack.id, {
-              youtubeId:
-                data.track.resolvedSource === "youtube"
-                  ? extractYouTubeId(data.track.streamUrl) || undefined
-                  : undefined,
+              youtubeId: ytId || undefined,
               streamUrl: data.track.streamUrl,
               resolvedSource: data.track.resolvedSource,
             });
             updateTrackInStore(data.track);
-            preloadedTrackRef.current = { id: nextTrack.id, ready: true };
+            preloadDirectAudioForNext(data.track, ytId);
           }
         })
         .catch(() => {});
       return;
     }
 
-    // 2. Preload SoundCloud progressive MP3 stream
+    // 2. Preload SoundCloud progressive MP3 stream (non-iOS) or direct audio-stream (iOS)
     if (
       nextTrack.source === "soundcloud" &&
       !isDirectAudioUrl(nextTrack.streamUrl)
     ) {
+      if (isIOS) {
+        preloadDirectAudioForNext(nextTrack, null);
+        return;
+      }
       fetch(
         `/api/stream/soundcloud?url=${encodeURIComponent(nextTrack.sourceUrl)}`,
         { headers: getByokHeaders() }
@@ -764,7 +1049,11 @@ export function AudioEngineManager() {
             isSnippet?: boolean;
           }) => {
             if (preloadId !== preloadRequestIdRef.current) return;
-            if (data.streamUrl && data.streamType === "progressive" && !data.isSnippet) {
+            if (
+              data.streamUrl &&
+              data.streamType === "progressive" &&
+              !data.isSnippet
+            ) {
               updateTrackInStore({ ...nextTrack, streamUrl: data.streamUrl });
               preloadedTrackRef.current = { id: nextTrack.id, ready: true };
             }
@@ -774,7 +1063,7 @@ export function AudioEngineManager() {
       return;
     }
 
-    // 3. Preload direct clean audio for YouTube track on mobile / Audio Only Mode
+    // 3. Preload direct audio-only URL for YouTube / resolved-Spotify next track
     const nextYtId =
       nextTrack.source === "youtube"
         ? extractYouTubeId(nextTrack.sourceUrl)
@@ -782,43 +1071,19 @@ export function AudioEngineManager() {
         ? extractYouTubeId(nextTrack.streamUrl)
         : null;
 
-    if (nextYtId && (audioOnlyMode || isMobileDevice)) {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 3500);
-      const params = new URLSearchParams({
-        v: nextYtId,
-        duration: String(nextTrack.duration || 0),
-      });
-      fetch(`/api/stream/youtube?${params.toString()}`, {
-        headers: getByokHeaders(),
-        signal: controller.signal,
-      })
-        .then((res) => res.json())
-        .then(
-          (data: {
-            streamUrl?: string | null;
-            streamType?: "direct-audio" | "none";
-          }) => {
-            if (preloadId !== preloadRequestIdRef.current) return;
-            if (data.streamUrl && data.streamType === "direct-audio") {
-              setCleanAudioOverrides((prev) => ({
-                ...prev,
-                [nextTrack.id]: {
-                  url: data.streamUrl!,
-                  engine: "html5",
-                  preservesYouTubeTimeline: true,
-                },
-              }));
-              preloadedTrackRef.current = { id: nextTrack.id, ready: true };
-            }
-          }
-        )
-        .catch(() => {})
-        .finally(() => clearTimeout(t));
+    if (nextYtId || isIOS) {
+      preloadDirectAudioForNext(nextTrack, nextYtId);
     }
-  }, [upcomingTrack, audioOnlyMode, isMobileDevice, updateTrackInStore]);
+  }, [
+    upcomingTrack,
+    isIOS,
+    audioOnlyMode,
+    isMobileDevice,
+    fetchDirectAudioStreamForTrack,
+    updateTrackInStore,
+  ]);
 
-  // Progress handler with integrated SponsorBlock, Smart Gapless Preload & Smooth Auto-Crossfade
+  // Progress handler with integrated SponsorBlock, Smart Gapless Preload (3s & 70%) & Smooth Auto-Crossfade
   const handleProgress = useCallback(
     (seconds: number) => {
       setProgress(seconds);
@@ -846,16 +1111,17 @@ export function AudioEngineManager() {
 
       const remaining = dur - seconds;
 
-      // 2. Instant Next-Track Preload as soon as current track plays for 3 seconds (or 75% / last 15s)
+      // 2. Instant Next-Track Preload at 3s AND >= 70% / last 15s (so iOS background `onEnded` switches at 0ms!)
       if (
         upcomingTrack &&
-        (seconds >= 3 || seconds / dur >= 0.75 || remaining <= 15)
+        (seconds >= 3 || seconds / dur >= 0.7 || remaining <= 15)
       ) {
         triggerGaplessPreload();
       }
 
-      // 3. Smooth Auto-Next Crossfade (Fade-Out current -> 0ms switch -> Fade-In preloaded next track)
+      // 3. Smooth Auto-Next Crossfade (Desktop / Android; skipped on iOS because audio.volume is hardware-controlled)
       if (
+        !isIOS &&
         crossfadeDuration > 0 &&
         upcomingTrack &&
         repeatMode !== "one" &&
@@ -864,7 +1130,10 @@ export function AudioEngineManager() {
         autoCrossfadeTriggeredRef.current !== currentTrack.id
       ) {
         autoCrossfadeTriggeredRef.current = currentTrack.id;
-        const fadeOutMs = Math.max(400, Math.min(remaining, crossfadeDuration) * 1000);
+        const fadeOutMs = Math.max(
+          400,
+          Math.min(remaining, crossfadeDuration) * 1000
+        );
         const startVol = effectiveVolume;
         const fadeTargetTrackId = currentTrack.id;
 
@@ -880,8 +1149,13 @@ export function AudioEngineManager() {
           onStep: (v) => setRampedVolume(v),
           onComplete: () => {
             activeRampCancelRef.current = null;
-            if (usePlayerStore.getState().currentTrack?.id === fadeTargetTrackId) {
-              pendingFadeInMsRef.current = Math.min(crossfadeDuration * 600, 1800);
+            if (
+              usePlayerStore.getState().currentTrack?.id === fadeTargetTrackId
+            ) {
+              pendingFadeInMsRef.current = Math.min(
+                crossfadeDuration * 600,
+                1800
+              );
               playNext(true);
             }
           },
@@ -889,6 +1163,7 @@ export function AudioEngineManager() {
       }
     },
     [
+      isIOS,
       autoSkipSponsor,
       crossfadeDuration,
       currentTrack,
@@ -903,7 +1178,7 @@ export function AudioEngineManager() {
     ]
   );
 
-  // YouTube Clean Audio Stream Fallback (when embed is blocked 101/150 or stalled > 4s on pre-roll)
+  // YouTube Clean Audio Stream Fallback (Desktop / Android when embed is blocked 101/150 or stalled > 4s)
   const handleYouTubeFallbackRequest = useCallback(
     async (reason: "embed_blocked" | "stall_timeout") => {
       if (!currentTrack || !youtubeVideoId) return;
@@ -923,37 +1198,18 @@ export function AudioEngineManager() {
       const trackId = currentTrack.id;
 
       try {
-        const params = new URLSearchParams({
-          v: youtubeVideoId,
-          title: currentTrack.title,
-          artist: currentTrack.artist,
-          duration: String(currentTrack.duration || 0),
-          // Only allow strictly-verified cross-source match when embed is hard-blocked (101/150)
-          ...(reason === "embed_blocked" ? { allowCrossSource: "1" } : {}),
-        });
-        const res = await fetch(`/api/stream/youtube?${params.toString()}`, {
-          headers: getByokHeaders(),
-        });
+        const result = await fetchDirectAudioStreamForTrack(
+          currentTrack,
+          youtubeVideoId
+        );
         if (reqId !== playRequestIdRef.current) return;
-        const data = (await res.json()) as {
-          streamUrl?: string | null;
-          streamType?:
-            | "direct-audio"
-            | "soundcloud-audio"
-            | "soundcloud-widget"
-            | "none";
-        };
-
-        if (data.streamUrl) {
+        if (result?.streamUrl) {
           setCleanAudioOverrides((prev) => ({
             ...prev,
             [trackId]: {
-              url: data.streamUrl!,
-              engine:
-                data.streamType === "soundcloud-widget"
-                  ? "soundcloud-widget"
-                  : "html5",
-              preservesYouTubeTimeline: data.streamType === "direct-audio",
+              url: result.streamUrl,
+              engine: "html5",
+              preservesYouTubeTimeline: result.preservesYouTubeTimeline,
             },
           }));
           setPlaybackError(null);
@@ -965,7 +1221,6 @@ export function AudioEngineManager() {
       if (reqId !== playRequestIdRef.current) return;
 
       if (reason === "embed_blocked") {
-        // Tier 3: Both Tier 1 & Tier 2 failed -> show concise toast & skip to next track if queue has more
         if (queue.length > 1) {
           showNotice("Video bị chặn phát nhúng — tự động chuyển bài tiếp theo");
           playNext(false);
@@ -981,6 +1236,7 @@ export function AudioEngineManager() {
     [
       currentTrack,
       youtubeVideoId,
+      fetchDirectAudioStreamForTrack,
       queue.length,
       playNext,
       setIsLoading,
@@ -998,9 +1254,23 @@ export function AudioEngineManager() {
     [setIsLoading, setIsPlaying]
   );
 
+  // Background-safe `onEnded`: on iOS, immediately assign `audio.src = nextTrackAudioUrl` & `audio.play()`
+  // synchronously BEFORE React state commits so iOS NEVER revokes the locked-screen Audio Session!
   const handleEnded = useCallback(() => {
+    if (isIOS && upcomingTrack && repeatMode !== "one") {
+      const preloadedNextUrl =
+        cleanAudioOverrides[upcomingTrack.id]?.url ||
+        getCachedDirectAudioUrl(upcomingTrack.id) ||
+        (isDirectAudioUrl(upcomingTrack.streamUrl)
+          ? upcomingTrack.streamUrl!
+          : null);
+
+      if (preloadedNextUrl) {
+        html5Ref.current?.switchStreamNow(preloadedNextUrl);
+      }
+    }
     playNext(true);
-  }, [playNext]);
+  }, [isIOS, upcomingTrack, repeatMode, cleanAudioOverrides, playNext]);
 
   const handleError = useCallback(
     (msg: string) => {
@@ -1012,7 +1282,28 @@ export function AudioEngineManager() {
   const handleHtml5Error = useCallback(() => {
     if (!currentTrack) return;
 
-    // If a YouTube clean-audio override URL failed/expired, revert cleanly
+    // On iOS, if a cached/signed direct audio URL failed/expired, refresh it ONCE from `/api/audio-stream`
+    if (isIOS) {
+      clearCachedDirectAudioUrl(currentTrack.id);
+      if (!iosAudioRetriedRef.current.has(currentTrack.id)) {
+        iosAudioRetriedRef.current.add(currentTrack.id);
+        setCleanAudioOverrides((prev) => {
+          const next = { ...prev };
+          delete next[currentTrack.id];
+          return next;
+        });
+        return;
+      }
+      if (queue.length > 1) {
+        showNotice("Luồng âm thanh gặp sự cố — tự động chuyển bài tiếp theo");
+        playNext(false);
+      } else {
+        setPlaybackError("Không thể phát luồng âm thanh nền cho bài hát này.");
+      }
+      return;
+    }
+
+    // Desktop / Android: if a YouTube clean-audio override URL failed/expired, revert cleanly
     if (cleanAudioOverrides[currentTrack.id]) {
       setCleanAudioOverrides((prev) => {
         const next = { ...prev };
@@ -1022,7 +1313,6 @@ export function AudioEngineManager() {
       return;
     }
 
-    // If SoundCloud progressive MP3 expires or fails, smoothly fall back to Widget API
     if (
       currentTrack.source === "soundcloud" ||
       currentTrack.resolvedSource === "soundcloud"
@@ -1031,23 +1321,33 @@ export function AudioEngineManager() {
     } else {
       setPlaybackError("Không thể phát luồng âm thanh trực tiếp này.");
     }
-  }, [cleanAudioOverrides, currentTrack, setPlaybackError]);
+  }, [
+    isIOS,
+    cleanAudioOverrides,
+    currentTrack,
+    queue.length,
+    playNext,
+    setPlaybackError,
+    showNotice,
+  ]);
 
   return (
     <>
-      <YouTubeAdapter
-        ref={ytRef}
-        videoId={youtubeVideoId}
-        active={activeEngine === "youtube"}
-        isPlaying={activeEngine === "youtube" && isPlaying}
-        volume={outputVolume}
-        onProgress={handleProgress}
-        onDuration={setDuration}
-        onStateChange={handleStateChange}
-        onEnded={handleEnded}
-        onError={handleError}
-        onFallbackRequest={handleYouTubeFallbackRequest}
-      />
+      {!isIOS && (
+        <YouTubeAdapter
+          ref={ytRef}
+          videoId={youtubeVideoId}
+          active={activeEngine === "youtube"}
+          isPlaying={activeEngine === "youtube" && isPlaying}
+          volume={outputVolume}
+          onProgress={handleProgress}
+          onDuration={setDuration}
+          onStateChange={handleStateChange}
+          onEnded={handleEnded}
+          onError={handleError}
+          onFallbackRequest={handleYouTubeFallbackRequest}
+        />
+      )}
       <Html5AudioAdapter
         ref={html5Ref}
         streamUrl={html5StreamUrl}
@@ -1057,21 +1357,24 @@ export function AudioEngineManager() {
         onProgress={handleProgress}
         onDuration={setDuration}
         onStateChange={handleStateChange}
+        onPlaying={handleHtml5Playing}
         onEnded={handleEnded}
         onError={handleHtml5Error}
       />
-      <SoundCloudAdapter
-        ref={scWidgetRef}
-        trackUrl={soundCloudWidgetUrl}
-        active={activeEngine === "soundcloud-widget"}
-        isPlaying={activeEngine === "soundcloud-widget" && isPlaying}
-        volume={outputVolume}
-        onProgress={handleProgress}
-        onDuration={setDuration}
-        onStateChange={handleStateChange}
-        onEnded={handleEnded}
-        onError={handleError}
-      />
+      {!isIOS && (
+        <SoundCloudAdapter
+          ref={scWidgetRef}
+          trackUrl={soundCloudWidgetUrl}
+          active={activeEngine === "soundcloud-widget"}
+          isPlaying={activeEngine === "soundcloud-widget" && isPlaying}
+          volume={outputVolume}
+          onProgress={handleProgress}
+          onDuration={setDuration}
+          onStateChange={handleStateChange}
+          onEnded={handleEnded}
+          onError={handleError}
+        />
+      )}
     </>
   );
 }

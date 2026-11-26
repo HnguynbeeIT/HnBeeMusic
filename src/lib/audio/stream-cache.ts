@@ -5,11 +5,14 @@ export interface CachedStreamEntry {
   streamUrl: string;
   resolvedSource: "youtube" | "soundcloud";
   audioUrl?: string;
+  audioUrlUpdatedAt?: number;
   updatedAt: number;
 }
 
 const STORAGE_KEY = "hnbee_stream_cache_v1";
 const MAX_ENTRIES = 500;
+// Signed direct audio URLs (e.g. googlevideo.com / sndcdn.com) stay fresh for ~2 hours
+const DIRECT_AUDIO_TTL_MS = 2 * 60 * 60 * 1000;
 
 let memoryCache: Record<string, CachedStreamEntry> | null = null;
 
@@ -63,9 +66,56 @@ export function setCachedStream(
 ): void {
   if (!trackId || !entry.streamUrl) return;
   const cache = loadCache();
+  const existing = cache[trackId];
   cache[trackId] = {
+    ...existing,
     ...entry,
     updatedAt: Date.now(),
   };
+  persistCache(cache);
+}
+
+export function getCachedDirectAudioUrl(trackId: string): string | null {
+  if (!trackId) return null;
+  const cache = loadCache();
+  const entry = cache[trackId];
+  if (!entry?.audioUrl) return null;
+  const age = Date.now() - (entry.audioUrlUpdatedAt || entry.updatedAt || 0);
+  if (age > DIRECT_AUDIO_TTL_MS) return null;
+  return entry.audioUrl;
+}
+
+export function setCachedDirectAudioUrl(
+  trackId: string,
+  audioUrl: string,
+  fallbackMeta?: {
+    streamUrl: string;
+    resolvedSource: "youtube" | "soundcloud";
+    youtubeId?: string;
+  }
+): void {
+  if (!trackId || !audioUrl) return;
+  const cache = loadCache();
+  const existing = cache[trackId];
+  const now = Date.now();
+  cache[trackId] = {
+    streamUrl: existing?.streamUrl || fallbackMeta?.streamUrl || audioUrl,
+    resolvedSource:
+      existing?.resolvedSource || fallbackMeta?.resolvedSource || "youtube",
+    youtubeId: existing?.youtubeId || fallbackMeta?.youtubeId,
+    audioUrl,
+    audioUrlUpdatedAt: now,
+    updatedAt: now,
+  };
+  persistCache(cache);
+}
+
+export function clearCachedDirectAudioUrl(trackId: string): void {
+  if (!trackId) return;
+  const cache = loadCache();
+  const existing = cache[trackId];
+  if (!existing?.audioUrl) return;
+  delete existing.audioUrl;
+  delete existing.audioUrlUpdatedAt;
   persistCache(cache);
 }
