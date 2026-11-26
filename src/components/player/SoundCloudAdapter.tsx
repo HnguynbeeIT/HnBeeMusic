@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -10,7 +11,10 @@ import {
 import type { EngineHandle } from "./YouTubeAdapter";
 
 interface SCWidget {
-  bind: (event: string, listener: (payload?: { currentPosition?: number }) => void) => void;
+  bind: (
+    event: string,
+    listener: (payload?: { currentPosition?: number }) => void
+  ) => void;
   unbind: (event: string) => void;
   load: (url: string, options?: Record<string, unknown>) => void;
   play: () => void;
@@ -63,7 +67,9 @@ function loadSoundCloudWidgetScript(): Promise<void> {
     );
     if (existing) {
       existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("SC script failed")));
+      existing.addEventListener("error", () =>
+        reject(new Error("SC script failed"))
+      );
       return;
     }
     const script = document.createElement("script");
@@ -95,7 +101,15 @@ export const SoundCloudAdapter = forwardRef<EngineHandle, SoundCloudAdapterProps
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const widgetRef = useRef<SCWidget | null>(null);
     const loadedUrlRef = useRef<string | null>(null);
+    const initialSrcRef = useRef<string | null>(null);
     const [scriptReady, setScriptReady] = useState(false);
+
+    // Freeze initial iframe src once mounted so switching SoundCloud tracks uses widget.load() without detaching contentWindow
+    if (trackUrl && !initialSrcRef.current) {
+      initialSrcRef.current = `https://w.soundcloud.com/player/?url=${encodeURIComponent(
+        trackUrl
+      )}&auto_play=false&hide_related=true&show_comments=false&show_user=false&show_reposts=false&visual=false`;
+    }
 
     const activeRef = useRef(active);
     const isPlayingRef = useRef(isPlaying);
@@ -104,34 +118,35 @@ export const SoundCloudAdapter = forwardRef<EngineHandle, SoundCloudAdapterProps
     isPlayingRef.current = isPlaying;
     volumeRef.current = volume;
 
-    useImperativeHandle(ref, () => ({
-      play: () => {
-        try {
-          widgetRef.current?.play();
-        } catch {}
-      },
-      pause: () => {
-        try {
-          widgetRef.current?.pause();
-        } catch {}
-      },
-      stopAndReset: () => {
-        try {
-          widgetRef.current?.pause();
-          widgetRef.current?.seekTo(0);
-        } catch {}
-      },
-      seekTo: (seconds: number) => {
-        try {
-          widgetRef.current?.seekTo(Math.max(0, Math.round(seconds * 1000)));
-        } catch {}
-      },
-      setVolume: (vol: number) => {
-        try {
-          widgetRef.current?.setVolume(Math.round(vol));
-        } catch {}
-      },
-    }));
+    // Safely invoke SC.Widget methods ONLY when iframe.contentWindow is live (prevents null postMessage crash)
+    const safeWidgetCall = useCallback((fn: (w: SCWidget) => void) => {
+      try {
+        const iframe = iframeRef.current;
+        const widget = widgetRef.current;
+        if (!iframe || !iframe.contentWindow || !widget) return;
+        fn(widget);
+      } catch {}
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        play: () => safeWidgetCall((w) => w.play()),
+        pause: () => safeWidgetCall((w) => w.pause()),
+        stopAndReset: () =>
+          safeWidgetCall((w) => {
+            w.pause();
+            w.seekTo(0);
+          }),
+        seekTo: (seconds: number) =>
+          safeWidgetCall((w) =>
+            w.seekTo(Math.max(0, Math.round(seconds * 1000)))
+          ),
+        setVolume: (vol: number) =>
+          safeWidgetCall((w) => w.setVolume(Math.round(vol))),
+      }),
+      [safeWidgetCall]
+    );
 
     useEffect(() => {
       if (!trackUrl) return;
@@ -145,7 +160,13 @@ export const SoundCloudAdapter = forwardRef<EngineHandle, SoundCloudAdapterProps
     }, [trackUrl, onError]);
 
     useEffect(() => {
-      if (!scriptReady || !iframeRef.current || !window.SC?.Widget || widgetRef.current) {
+      if (
+        !scriptReady ||
+        !iframeRef.current ||
+        !iframeRef.current.contentWindow ||
+        !window.SC?.Widget ||
+        widgetRef.current
+      ) {
         return;
       }
 
@@ -154,21 +175,25 @@ export const SoundCloudAdapter = forwardRef<EngineHandle, SoundCloudAdapterProps
       widgetRef.current = widget;
 
       widget.bind(Events.READY, () => {
-        widget.setVolume(Math.round(volumeRef.current));
-        widget.getDuration((ms) => {
-          if (ms > 0) onDuration(ms / 1000);
+        safeWidgetCall((w) => {
+          w.setVolume(Math.round(volumeRef.current));
+          w.getDuration((ms) => {
+            if (ms > 0) onDuration(ms / 1000);
+          });
+          if (activeRef.current && isPlayingRef.current) {
+            w.play();
+          }
         });
-        if (activeRef.current && isPlayingRef.current) {
-          widget.play();
-        }
       });
 
       widget.bind(Events.PLAY, () => {
         if (!activeRef.current) return;
         onStateChange({ isPlaying: true, isLoading: false });
-        widget.getDuration((ms) => {
-          if (ms > 0) onDuration(ms / 1000);
-        });
+        safeWidgetCall((w) =>
+          w.getDuration((ms) => {
+            if (ms > 0) onDuration(ms / 1000);
+          })
+        );
       });
 
       widget.bind(Events.PAUSE, () => {
@@ -193,62 +218,75 @@ export const SoundCloudAdapter = forwardRef<EngineHandle, SoundCloudAdapterProps
         onStateChange({ isPlaying: false, isLoading: false });
         onError("Không thể phát nguồn SoundCloud này.");
       });
-    }, [scriptReady, onDuration, onEnded, onError, onProgress, onStateChange]);
+    }, [
+      scriptReady,
+      initialSrcRef.current,
+      onDuration,
+      onEnded,
+      onError,
+      onProgress,
+      onStateChange,
+      safeWidgetCall,
+    ]);
 
     // Load new SoundCloud track when trackUrl changes
     useEffect(() => {
-      if (!active || !trackUrl || !widgetRef.current) return;
+      if (!active || !trackUrl) return;
       if (loadedUrlRef.current === trackUrl) return;
-      loadedUrlRef.current = trackUrl;
+      if (!widgetRef.current || !iframeRef.current?.contentWindow) return;
 
-      widgetRef.current.load(trackUrl, {
-        auto_play: isPlayingRef.current,
-        hide_related: true,
-        show_comments: false,
-        show_user: false,
-        show_reposts: false,
-        visual: false,
-        callback: () => {
-          widgetRef.current?.setVolume(Math.round(volumeRef.current));
-          widgetRef.current?.getDuration((ms) => {
-            if (ms > 0) onDuration(ms / 1000);
-          });
-          if (activeRef.current && isPlayingRef.current) {
-            widgetRef.current?.play();
-          }
-        },
-      });
-    }, [active, trackUrl, onDuration]);
+      loadedUrlRef.current = trackUrl;
+      safeWidgetCall((w) =>
+        w.load(trackUrl, {
+          auto_play: isPlayingRef.current,
+          hide_related: true,
+          show_comments: false,
+          show_user: false,
+          show_reposts: false,
+          visual: false,
+          callback: () => {
+            safeWidgetCall((readyWidget) => {
+              readyWidget.setVolume(Math.round(volumeRef.current));
+              readyWidget.getDuration((ms) => {
+                if (ms > 0) onDuration(ms / 1000);
+              });
+              if (activeRef.current && isPlayingRef.current) {
+                readyWidget.play();
+              }
+            });
+          },
+        })
+      );
+    }, [active, trackUrl, onDuration, safeWidgetCall]);
 
     // Sync play/pause
     useEffect(() => {
-      if (!active || !trackUrl || !widgetRef.current) return;
-      if (isPlaying) {
-        widgetRef.current.play();
-      } else {
-        widgetRef.current.pause();
-      }
-    }, [active, isPlaying, trackUrl]);
+      if (!active || !trackUrl) return;
+      safeWidgetCall((w) => {
+        if (isPlaying) {
+          w.play();
+        } else {
+          w.pause();
+        }
+      });
+    }, [active, isPlaying, trackUrl, safeWidgetCall]);
 
     // Sync volume
     useEffect(() => {
-      widgetRef.current?.setVolume(Math.round(volume));
-    }, [volume]);
+      safeWidgetCall((w) => w.setVolume(Math.round(volume)));
+    }, [volume, safeWidgetCall]);
 
-    if (!trackUrl) return null;
-
-    const initialSrc = `https://w.soundcloud.com/player/?url=${encodeURIComponent(
-      trackUrl
-    )}&auto_play=false&hide_related=true&show_comments=false&show_user=false&show_reposts=false&visual=false`;
+    // Keep iframe mounted once initialized so switching between SoundCloud tracks never invalidates contentWindow
+    if (!initialSrcRef.current) return null;
 
     return (
       <iframe
         ref={iframeRef}
         title="HnBeeMusic SoundCloud Engine"
         aria-hidden="true"
-        allow="autoplay"
-        src={initialSrc}
-        className="pointer-events-none fixed -left-[9999px] -top-[9999px] h-px w-px opacity-0"
+        allow="autoplay; encrypted-media"
+        src={initialSrcRef.current}
+        className="pointer-events-none fixed bottom-0 right-0 z-0 h-8 w-8 overflow-hidden opacity-[0.01]"
       />
     );
   }

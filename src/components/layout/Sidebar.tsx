@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import {
   Compass,
   Flame,
+  Home,
   Library,
   Play,
   Search,
@@ -37,9 +38,9 @@ const NAV_ITEMS = [
 ];
 
 const MOBILE_NAV_ITEMS = [
-  { href: "/", label: "Khám phá", icon: Compass },
+  { href: "/", label: "Trang chủ", icon: Home },
+  { href: "/trending", label: "Khám phá", icon: Compass },
   { href: "/search", label: "Tìm kiếm", icon: Search },
-  { href: "/trending", label: "Trending", icon: Flame },
   { href: "/library", label: "Thư viện", icon: Library },
 ];
 
@@ -89,23 +90,50 @@ export function Sidebar() {
 
   return (
     <>
-      {/* MOBILE TOP GLASS HEADER */}
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-[#09090b]/80 px-4 py-2.5 backdrop-blur-xl md:hidden">
+      {/* MOBILE TOP GLASS HEADER (Dynamic Island / Notch safe-area aware) */}
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-[#09090b]/85 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur-xl md:hidden">
         <Link href="/" aria-label="HnBee Music Home">
           <BrandLogo variant="compact" />
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <RegionSelector compact />
           <motion.button
             type="button"
             {...BUTTON_MOTION}
             onClick={() => setSettingsOpen(true)}
             aria-label="API Settings (BYOK)"
-            className="relative rounded-xl border border-white/10 bg-zinc-900/70 p-2 text-zinc-300"
+            className="relative flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/70 text-zinc-300"
           >
             <Settings className="h-4 w-4" />
             {hasCustomKeys && (
-              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            )}
+          </motion.button>
+          <motion.button
+            type="button"
+            {...BUTTON_MOTION}
+            onClick={() => setAuthModalOpen(true)}
+            aria-label="Tài khoản & Đồng bộ Server"
+            className="relative flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/70 text-zinc-300"
+          >
+            {user ? (
+              user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.displayName}
+                  referrerPolicy="no-referrer"
+                  className="h-6 w-6 rounded-full object-cover"
+                />
+              ) : (
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 text-[10px] font-bold text-zinc-950">
+                  {getInitials(user.displayName || user.username)}
+                </span>
+              )
+            ) : (
+              <UserRound className="h-4 w-4" />
+            )}
+            {user && (
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
             )}
           </motion.button>
         </div>
@@ -365,17 +393,20 @@ export function Sidebar() {
         </div>
       </aside>
 
-      {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-5 border-t border-white/10 bg-zinc-900/90 backdrop-blur-xl md:hidden">
+      {/* MOBILE 4-TAB iOS HIG BOTTOM TAB BAR (Home Indicator safe-area aware) */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-white/10 bg-zinc-950/92 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden">
         {MOBILE_NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href;
+          const active =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${
-                active ? "text-white" : "text-zinc-500"
+              className={`flex min-h-[56px] flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${
+                active ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-200"
               }`}
             >
               <Icon className="h-5 w-5" />
@@ -383,32 +414,6 @@ export function Sidebar() {
             </Link>
           );
         })}
-
-        <button
-          type="button"
-          onClick={() => setAuthModalOpen(true)}
-          className="relative flex flex-col items-center justify-center gap-1 text-[10px] font-medium text-zinc-400 hover:text-white"
-        >
-          {user ? (
-            user.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt={user.displayName}
-                referrerPolicy="no-referrer"
-                className="h-5 w-5 rounded-full object-cover"
-              />
-            ) : (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 text-[9px] font-bold text-zinc-950">
-                {getInitials(user.displayName || user.username)}
-              </span>
-            )
-          ) : (
-            <UserRound className="h-5 w-5" />
-          )}
-          <span className="max-w-[56px] truncate">
-            {user ? user.username : "Tài khoản"}
-          </span>
-        </button>
       </nav>
     </>
   );

@@ -8,6 +8,7 @@ import type {
   UnifiedTrack,
 } from "@/lib/audio/types";
 import { sanitizeTracks } from "@/lib/audio/sanitize";
+import { unlockGlobalAudioNow } from "@/lib/audio/ios-unlock";
 
 interface PlayerState {
   currentTrack: UnifiedTrack | null;
@@ -95,6 +96,7 @@ export const usePlayerStore = create<PlayerState>()(
       likedTracks: [],
 
       playTrack: (track, newQueue) => {
+        unlockGlobalAudioNow();
         const state = get();
         let nextQueue = state.queue;
         let nextIndex = state.queue.findIndex((t) => t.id === track.id);
@@ -135,6 +137,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playPlaylist: (tracks, startIndex = 0) => {
+        unlockGlobalAudioNow();
         if (!Array.isArray(tracks) || tracks.length === 0) return;
         const safeIndex = Math.max(
           0,
@@ -156,6 +159,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       togglePlay: () => {
+        unlockGlobalAudioNow();
         const { currentTrack, isPlaying } = get();
         if (!currentTrack) return;
         set({ isPlaying: !isPlaying, playbackError: null });

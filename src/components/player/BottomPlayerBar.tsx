@@ -147,7 +147,7 @@ export function BottomPlayerBar() {
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") setFullPlayerOpen(true);
             }}
-            className="fixed inset-x-2 bottom-16 z-40 overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/75 shadow-2xl backdrop-blur-xl md:hidden"
+            className="fixed inset-x-2 bottom-[calc(4.15rem+env(safe-area-inset-bottom))] z-40 overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/85 shadow-2xl backdrop-blur-2xl md:hidden"
           >
             <div className="flex items-center gap-3 px-3 py-2.5">
               <motion.div
@@ -192,7 +192,7 @@ export function BottomPlayerBar() {
                   togglePlay();
                 }}
                 aria-label={isPlaying ? "Tạm dừng" : "Phát"}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-zinc-950 shadow-md"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-zinc-950 shadow-md"
               >
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
