@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
       headers: {
         "Cache-Control": hasByok
           ? "private, no-store"
-          : "public, s-maxage=900, stale-while-revalidate=1800",
+          : "public, s-maxage=3600, stale-while-revalidate=86400",
       },
     });
   } catch (error) {

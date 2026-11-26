@@ -48,6 +48,16 @@ function isSoundCloudSnippet(item: SoundCloudApiTrack): boolean {
 
 let cachedPublicClientId: { id: string; expiresAt: number } | null = null;
 const CLIENT_ID_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const SC_TIMEOUT_MS = 2500;
+
+function scTimeoutSignal(ms = SC_TIMEOUT_MS): AbortSignal {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const c = new AbortController();
+  setTimeout(() => c.abort(), ms);
+  return c.signal;
+}
 
 /**
  * Automatically extracts & caches SoundCloud's public client_id from
@@ -141,6 +151,7 @@ export async function searchSoundCloud(
       url.searchParams.set("limit", String(fetchLimit));
 
       const res = await fetch(url.toString(), {
+        signal: scTimeoutSignal(),
         next: { revalidate: 1800 },
       });
 
@@ -203,7 +214,10 @@ export async function resolveSoundCloudStream(
       resolveApiUrl.searchParams.set("url", trackUrl);
       resolveApiUrl.searchParams.set("client_id", clientId);
 
-      const res = await fetch(resolveApiUrl.toString(), { cache: "no-store" });
+      const res = await fetch(resolveApiUrl.toString(), {
+        signal: scTimeoutSignal(),
+        cache: "no-store",
+      });
       if (res.ok) {
         const data = (await res.json()) as SoundCloudApiTrack;
         const snippet = isSoundCloudSnippet(data);

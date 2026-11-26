@@ -6,6 +6,7 @@ import { usePlaybackTimeStore } from "@/store/usePlaybackTimeStore";
 import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
 import { extractYouTubeId } from "@/lib/audio/url-parser";
 import { smoothVolumeRamp } from "@/lib/audio/crossfade";
+import { getCachedStream, setCachedStream } from "@/lib/audio/stream-cache";
 import { useMediaSession } from "@/hooks/useMediaSession";
 import {
   fetchSponsorSegments,
@@ -496,13 +497,24 @@ export function AudioEngineManager() {
     updateTrackInStore,
   ]);
 
-  // LAZY STREAM MATCHING for Spotify current track (100% full-length audio, never 30s preview)
+  // LAZY STREAM MATCHING for Spotify current track (0ms persistent localStorage cache first!)
   useEffect(() => {
     if (
       !currentTrack ||
       currentTrack.source !== "spotify" ||
       (currentTrack.streamUrl && currentTrack.resolvedSource)
     ) {
+      return;
+    }
+
+    // 0ms Instant Cache Hit from hnbee_stream_cache_v1
+    const cached = getCachedStream(currentTrack.id);
+    if (cached) {
+      updateTrackInStore({
+        ...currentTrack,
+        streamUrl: cached.streamUrl,
+        resolvedSource: cached.resolvedSource,
+      });
       return;
     }
 
@@ -522,8 +534,15 @@ export function AudioEngineManager() {
     })
       .then((res) => res.json())
       .then((data: { track?: typeof targetTrack }) => {
-        // Still cache matched stream on that track in store, but never mutate playing/error state if user switched tracks
         if (data.track?.streamUrl && data.track?.resolvedSource) {
+          setCachedStream(targetTrack.id, {
+            youtubeId:
+              data.track.resolvedSource === "youtube"
+                ? extractYouTubeId(data.track.streamUrl) || undefined
+                : undefined,
+            streamUrl: data.track.streamUrl,
+            resolvedSource: data.track.resolvedSource,
+          });
           updateTrackInStore(data.track);
         } else if (reqId === playRequestIdRef.current) {
           setIsLoading(false);
@@ -620,8 +639,8 @@ export function AudioEngineManager() {
       const reqId = playRequestIdRef.current;
       const trackId = currentTrack.id;
       const controller = new AbortController();
-      // Tier 1 timeout <= 3.5s -> if slow/unavailable, seamlessly keep playing Tier 2 (YouTube IFrame)
-      const timeout = setTimeout(() => controller.abort(), 3500);
+      // Strict 2.5s timeout -> YouTube IFrame Player plays immediately without waiting!
+      const timeout = setTimeout(() => controller.abort(), 2500);
       const params = new URLSearchParams({
         v: youtubeVideoId,
         duration: String(currentTrack.duration || 0),
@@ -687,11 +706,22 @@ export function AudioEngineManager() {
     const preloadId = ++preloadRequestIdRef.current;
     preloadedTrackRef.current = { id: nextTrack.id, ready: false };
 
-    // 1. Preload unmatched Spotify track -> resolve YouTube/SoundCloud stream in background
+    // 1. Preload unmatched Spotify track -> check 0ms localStorage cache first, else resolve & persist
     if (
       nextTrack.source === "spotify" &&
       !(nextTrack.streamUrl && nextTrack.resolvedSource)
     ) {
+      const cachedNext = getCachedStream(nextTrack.id);
+      if (cachedNext) {
+        updateTrackInStore({
+          ...nextTrack,
+          streamUrl: cachedNext.streamUrl,
+          resolvedSource: cachedNext.resolvedSource,
+        });
+        preloadedTrackRef.current = { id: nextTrack.id, ready: true };
+        return;
+      }
+
       fetch("/api/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getByokHeaders() },
@@ -701,6 +731,14 @@ export function AudioEngineManager() {
         .then((data: { track?: typeof nextTrack }) => {
           if (preloadId !== preloadRequestIdRef.current) return;
           if (data.track?.streamUrl && data.track?.resolvedSource) {
+            setCachedStream(nextTrack.id, {
+              youtubeId:
+                data.track.resolvedSource === "youtube"
+                  ? extractYouTubeId(data.track.streamUrl) || undefined
+                  : undefined,
+              streamUrl: data.track.streamUrl,
+              resolvedSource: data.track.resolvedSource,
+            });
             updateTrackInStore(data.track);
             preloadedTrackRef.current = { id: nextTrack.id, ready: true };
           }
@@ -808,8 +846,11 @@ export function AudioEngineManager() {
 
       const remaining = dur - seconds;
 
-      // 2. Smart Gapless Preload at 75% progress or last 15 seconds
-      if (upcomingTrack && (seconds / dur >= 0.75 || remaining <= 15)) {
+      // 2. Instant Next-Track Preload as soon as current track plays for 3 seconds (or 75% / last 15s)
+      if (
+        upcomingTrack &&
+        (seconds >= 3 || seconds / dur >= 0.75 || remaining <= 15)
+      ) {
         triggerGaplessPreload();
       }
 

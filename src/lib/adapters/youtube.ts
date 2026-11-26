@@ -60,6 +60,20 @@ function parseClockDuration(text?: string): number {
   return parts[0] || 0;
 }
 
+const FAST_TIMEOUT_MS = 2500;
+// Short-circuit Data API v3 for 30 minutes after hitting 403/429 quota exceeded
+// so every track search saves 300-600ms of wasted round-trip latency.
+let ytDataApiQuotaBlockedUntil = 0;
+
+function createTimeoutSignal(ms = FAST_TIMEOUT_MS): AbortSignal {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const c = new AbortController();
+  setTimeout(() => c.abort(), ms);
+  return c.signal;
+}
+
 const PIPED_SEARCH_INSTANCES = [
   "https://pipedapi.kavin.rocks",
   "https://pipedapi.adminforge.de",
@@ -155,15 +169,13 @@ async function searchYouTubeInnerTube(
   region: RegionCode = "VN"
 ): Promise<UnifiedTrack[]> {
   if (!query.trim()) return [];
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4500);
   try {
     const regionInfo = REGIONS[region];
     const res = await fetch(
       "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
       {
         method: "POST",
-        signal: controller.signal,
+        signal: createTimeoutSignal(FAST_TIMEOUT_MS),
         headers: {
           "Content-Type": "application/json",
           "User-Agent":
@@ -190,13 +202,11 @@ async function searchYouTubeInnerTube(
     return extractTracksFromInnerTubePayload(data, maxResults);
   } catch {
     return [];
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
 /**
- * Tier 3: Zero-Quota ytInitialData HTML Fallback (with SOCS consent cookie for datacenter IPs).
+ * Tier 3: Zero-Quota ytInitialData HTML Fallback (with SOCS consent cookie, strict 2.5s timeout).
  */
 async function searchYouTubeZeroQuotaFallback(
   query: string,
@@ -205,8 +215,6 @@ async function searchYouTubeZeroQuotaFallback(
 ): Promise<UnifiedTrack[]> {
   if (!query.trim()) return [];
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4500);
   try {
     const regionInfo = REGIONS[region];
     const url = new URL("https://www.youtube.com/results");
@@ -219,7 +227,7 @@ async function searchYouTubeZeroQuotaFallback(
     }
 
     const res = await fetch(url.toString(), {
-      signal: controller.signal,
+      signal: createTimeoutSignal(FAST_TIMEOUT_MS),
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -253,13 +261,11 @@ async function searchYouTubeZeroQuotaFallback(
   } catch (error) {
     console.error("[youtube-adapter] zero-quota fallback failed:", error);
     return [];
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
 /**
- * Tier 4: Rotating Piped & Invidious Search API (anti-datacenter IP block safety net).
+ * Tier 4: Rotating Piped & Invidious Search API (strict 2.5s timeout).
  */
 async function searchYouTubePipedInvidious(
   query: string,
@@ -269,94 +275,82 @@ async function searchYouTubePipedInvidious(
   const q = encodeURIComponent(query.trim());
 
   const pipedTasks = PIPED_SEARCH_INSTANCES.map(async (base) => {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 3200);
-    try {
-      const res = await fetch(`${base}/search?q=${q}&filter=videos`, {
-        signal: controller.signal,
-        cache: "no-store",
+    const res = await fetch(`${base}/search?q=${q}&filter=videos`, {
+      signal: createTimeoutSignal(FAST_TIMEOUT_MS),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("piped search non-ok");
+    const data = (await res.json()) as {
+      items?: Array<{
+        url?: string;
+        title?: string;
+        uploaderName?: string;
+        thumbnail?: string;
+        duration?: number;
+      }>;
+    };
+    const tracks: UnifiedTrack[] = [];
+    for (const item of data.items ?? []) {
+      const m = item.url?.match(/v=([a-zA-Z0-9_-]{11})/);
+      const videoId = m?.[1];
+      if (!videoId) continue;
+      tracks.push({
+        id: `yt:${videoId}`,
+        title: item.title || "YouTube Track",
+        artist: item.uploaderName || "YouTube",
+        thumbnail: upgradeThumbnail(
+          item.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          "youtube"
+        ),
+        duration:
+          typeof item.duration === "number" && item.duration > 0
+            ? item.duration
+            : 0,
+        source: "youtube",
+        sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
       });
-      if (!res.ok) throw new Error("piped search non-ok");
-      const data = (await res.json()) as {
-        items?: Array<{
-          url?: string;
-          title?: string;
-          uploaderName?: string;
-          thumbnail?: string;
-          duration?: number;
-        }>;
-      };
-      const tracks: UnifiedTrack[] = [];
-      for (const item of data.items ?? []) {
-        const m = item.url?.match(/v=([a-zA-Z0-9_-]{11})/);
-        const videoId = m?.[1];
-        if (!videoId) continue;
-        tracks.push({
-          id: `yt:${videoId}`,
-          title: item.title || "YouTube Track",
-          artist: item.uploaderName || "YouTube",
-          thumbnail: upgradeThumbnail(
-            item.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            "youtube"
-          ),
-          duration:
-            typeof item.duration === "number" && item.duration > 0
-              ? item.duration
-              : 0,
-          source: "youtube",
-          sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
-        });
-        if (tracks.length >= maxResults) break;
-      }
-      if (tracks.length === 0) throw new Error("piped search empty");
-      return tracks;
-    } finally {
-      clearTimeout(t);
+      if (tracks.length >= maxResults) break;
     }
+    if (tracks.length === 0) throw new Error("piped search empty");
+    return tracks;
   });
 
   const invidiousTasks = INVIDIOUS_SEARCH_INSTANCES.map(async (base) => {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 3200);
-    try {
-      const res = await fetch(`${base}/api/v1/search?q=${q}&type=video`, {
-        signal: controller.signal,
-        cache: "no-store",
+    const res = await fetch(`${base}/api/v1/search?q=${q}&type=video`, {
+      signal: createTimeoutSignal(FAST_TIMEOUT_MS),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("invidious search non-ok");
+    const items = (await res.json()) as Array<{
+      videoId?: string;
+      title?: string;
+      author?: string;
+      lengthSeconds?: number;
+      videoThumbnails?: Array<{ url?: string }>;
+    }>;
+    const tracks: UnifiedTrack[] = [];
+    for (const item of items ?? []) {
+      if (!item.videoId) continue;
+      tracks.push({
+        id: `yt:${item.videoId}`,
+        title: item.title || "YouTube Track",
+        artist: item.author || "YouTube",
+        thumbnail: upgradeThumbnail(
+          item.videoThumbnails?.[0]?.url ||
+            `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+          "youtube"
+        ),
+        duration:
+          typeof item.lengthSeconds === "number" && item.lengthSeconds > 0
+            ? item.lengthSeconds
+            : 0,
+        source: "youtube",
+        sourceUrl: `https://www.youtube.com/watch?v=${item.videoId}`,
       });
-      if (!res.ok) throw new Error("invidious search non-ok");
-      const items = (await res.json()) as Array<{
-        videoId?: string;
-        title?: string;
-        author?: string;
-        lengthSeconds?: number;
-        videoThumbnails?: Array<{ url?: string }>;
-      }>;
-      const tracks: UnifiedTrack[] = [];
-      for (const item of items ?? []) {
-        if (!item.videoId) continue;
-        tracks.push({
-          id: `yt:${item.videoId}`,
-          title: item.title || "YouTube Track",
-          artist: item.author || "YouTube",
-          thumbnail: upgradeThumbnail(
-            item.videoThumbnails?.[0]?.url ||
-              `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
-            "youtube"
-          ),
-          duration:
-            typeof item.lengthSeconds === "number" && item.lengthSeconds > 0
-              ? item.lengthSeconds
-              : 0,
-          source: "youtube",
-          sourceUrl: `https://www.youtube.com/watch?v=${item.videoId}`,
-        });
-        if (tracks.length >= maxResults) break;
-      }
-      if (tracks.length === 0) throw new Error("invidious search empty");
-      return tracks;
-    } finally {
-      clearTimeout(t);
+      if (tracks.length >= maxResults) break;
     }
+    if (tracks.length === 0) throw new Error("invidious search empty");
+    return tracks;
   });
 
   try {
@@ -376,8 +370,9 @@ export async function searchYouTubeWithStatus(
 
   const apiKey = apiKeyOverride?.trim() || process.env.YOUTUBE_API_KEY;
 
-  // Tier 1: Official YouTube Data API v3
-  if (apiKey) {
+  // Tier 1: Official YouTube Data API v3 (skip for 30m if server key hit 403/429 quota)
+  const useCustomKey = Boolean(apiKeyOverride?.trim());
+  if (apiKey && (useCustomKey || Date.now() >= ytDataApiQuotaBlockedUntil)) {
     try {
       const regionInfo = REGIONS[region];
       const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
@@ -395,6 +390,7 @@ export async function searchYouTubeWithStatus(
       searchUrl.searchParams.set("key", apiKey);
 
       const searchRes = await fetch(searchUrl.toString(), {
+        signal: createTimeoutSignal(FAST_TIMEOUT_MS),
         next: { revalidate: 1800 },
       });
 
@@ -416,6 +412,7 @@ export async function searchYouTubeWithStatus(
 
           const durationMap = new Map<string, number>();
           const detailsRes = await fetch(detailsUrl.toString(), {
+            signal: createTimeoutSignal(FAST_TIMEOUT_MS),
             next: { revalidate: 1800 },
           });
           if (detailsRes.ok) {
@@ -452,8 +449,11 @@ export async function searchYouTubeWithStatus(
           return { tracks, status: "api" };
         }
       } else {
+        if (!useCustomKey && (searchRes.status === 403 || searchRes.status === 429)) {
+          ytDataApiQuotaBlockedUntil = Date.now() + 30 * 60 * 1000;
+        }
         console.warn(
-          `[youtube-adapter] Data API v3 HTTP ${searchRes.status} — switching to zero-quota fallback`
+          `[youtube-adapter] Data API v3 HTTP ${searchRes.status} — switching to fast-path racing`
         );
       }
     } catch (error) {
@@ -461,27 +461,24 @@ export async function searchYouTubeWithStatus(
     }
   }
 
-  // Tier 2: YouTube InnerTube JSON API (fast, reliable on Vercel Serverless IPs)
-  const innerTubeTracks = await searchYouTubeInnerTube(
-    query,
-    maxResults,
-    region
-  );
-  if (innerTubeTracks.length > 0) {
-    return { tracks: innerTubeTracks, status: "fallback" };
+  // Tier 2 + 3 Fast-Path Racing: race InnerTube JSON API and ytInitialData HTML in parallel (<= 2.5s)
+  try {
+    const fastest = await Promise.any([
+      searchYouTubeInnerTube(query, maxResults, region).then((res) => {
+        if (res.length === 0) throw new Error("innertube empty");
+        return res;
+      }),
+      searchYouTubeZeroQuotaFallback(query, maxResults, region).then((res) => {
+        if (res.length === 0) throw new Error("html empty");
+        return res;
+      }),
+    ]);
+    return { tracks: fastest, status: "fallback" };
+  } catch {
+    // Both failed -> proceed to Tier 4
   }
 
-  // Tier 3: Zero-Quota ytInitialData HTML Fallback (with SOCS consent cookie)
-  const fallbackTracks = await searchYouTubeZeroQuotaFallback(
-    query,
-    maxResults,
-    region
-  );
-  if (fallbackTracks.length > 0) {
-    return { tracks: fallbackTracks, status: "fallback" };
-  }
-
-  // Tier 4: Rotating Piped & Invidious Search API
+  // Tier 4: Rotating Piped & Invidious Search API (<= 2.5s)
   const pipedInvidiousTracks = await searchYouTubePipedInvidious(
     query,
     maxResults

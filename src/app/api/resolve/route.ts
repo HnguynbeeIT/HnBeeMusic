@@ -205,7 +205,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json<ResolveResponse>(resolved);
+    return NextResponse.json<ResolveResponse>(resolved, {
+      headers: {
+        "Cache-Control":
+          spIdHeader || ytHeader
+            ? "private, no-store"
+            : "public, s-maxage=3600, stale-while-revalidate=86400",
+      },
+    });
   } catch (error) {
     console.error("[api/resolve] error:", error);
     return NextResponse.json(
