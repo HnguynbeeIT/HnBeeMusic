@@ -15,6 +15,7 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { CloudSyncManager } from "@/components/auth/CloudSyncManager";
 import { CreatePlaylistModal } from "@/components/playlist/CreatePlaylistModal";
 import { IOSInstallBanner } from "@/components/pwa/IOSInstallBanner";
+import { AboutModal } from "@/components/AboutModal";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -85,6 +86,7 @@ export default function RootLayout({
           <ApiSettingsModal />
           <AuthModal />
           <CreatePlaylistModal />
+          <AboutModal />
           <CloudSyncManager />
           <IOSInstallBanner />
         </MotionProvider>
