@@ -296,10 +296,13 @@ export function BottomPlayerBar() {
                     <p className="mb-2 px-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                       Thêm vào Playlist
                     </p>
-                    {playlists.length > 0 && (
+                    {Array.isArray(playlists) && playlists.length > 0 && (
                       <div className="mb-2 max-h-36 space-y-1 overflow-y-auto">
                         {playlists.map((pl) => {
-                          const alreadyIn = pl.tracks.some(
+                          const plTracks = Array.isArray(pl?.tracks)
+                            ? pl.tracks
+                            : [];
+                          const alreadyIn = plTracks.some(
                             (t) => t.id === currentTrack.id
                           );
                           return (

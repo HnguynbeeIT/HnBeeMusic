@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { UnifiedTrack } from "@/lib/audio/types";
+import { sanitizePlaylists, sanitizeTracks } from "@/lib/audio/sanitize";
 
 export interface UserPlaylist {
   id: string;
@@ -90,13 +91,13 @@ export const usePlaylistStore = create<PlaylistState>()(
         }
 
         const created: UserPlaylist = {
-          id: `upl:${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: `upl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           name,
           ...(opts.description?.trim()
             ? { description: opts.description.trim() }
             : {}),
           ...(opts.coverUrl?.trim() ? { coverUrl: opts.coverUrl.trim() } : {}),
-          tracks: dedupedTracks,
+          tracks: sanitizeTracks(dedupedTracks),
           createdAt: now,
           updatedAt: now,
         };
@@ -191,7 +192,7 @@ export const usePlaylistStore = create<PlaylistState>()(
       },
 
       setPlaylists: (playlists) => {
-        set({ playlists });
+        set({ playlists: sanitizePlaylists(playlists) });
       },
 
       syncFromCloud: async () => {
@@ -203,7 +204,7 @@ export const usePlaylistStore = create<PlaylistState>()(
             playlists?: UserPlaylist[];
           };
           if (data.synced && Array.isArray(data.playlists)) {
-            set({ playlists: data.playlists });
+            set({ playlists: sanitizePlaylists(data.playlists) });
           }
         } catch {}
       },
@@ -213,6 +214,13 @@ export const usePlaylistStore = create<PlaylistState>()(
       partialize: (state) => ({
         playlists: state.playlists,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState || {}) as Partial<PlaylistState>;
+        return {
+          ...currentState,
+          playlists: sanitizePlaylists(persisted.playlists),
+        };
+      },
     }
   )
 );

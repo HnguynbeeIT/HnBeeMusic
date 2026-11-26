@@ -7,6 +7,7 @@ import type {
   TrackSource,
   UnifiedTrack,
 } from "@/lib/audio/types";
+import { sanitizeTracks } from "@/lib/audio/sanitize";
 
 interface PlayerState {
   currentTrack: UnifiedTrack | null;
@@ -340,6 +341,22 @@ export const usePlayerStore = create<PlayerState>()(
         isShuffle: state.isShuffle,
         likedTracks: state.likedTracks,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState || {}) as Partial<PlayerState>;
+        return {
+          ...currentState,
+          volume:
+            typeof persisted.volume === "number" && Number.isFinite(persisted.volume)
+              ? Math.max(0, Math.min(100, persisted.volume))
+              : currentState.volume,
+          repeatMode: persisted.repeatMode ?? currentState.repeatMode,
+          isShuffle:
+            typeof persisted.isShuffle === "boolean"
+              ? persisted.isShuffle
+              : currentState.isShuffle,
+          likedTracks: sanitizeTracks(persisted.likedTracks),
+        };
+      },
     }
   )
 );

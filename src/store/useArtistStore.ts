@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { TrackSource } from "@/lib/audio/types";
+import { sanitizeFollowedArtists } from "@/lib/audio/sanitize";
 
 export interface FollowedArtist {
   id: string;
@@ -56,10 +57,18 @@ export const useArtistStore = create<ArtistStoreState>()(
         );
       },
 
-      setFollowedArtists: (artists) => set({ followedArtists: artists }),
+      setFollowedArtists: (artists) =>
+        set({ followedArtists: sanitizeFollowedArtists(artists) }),
     }),
     {
       name: "hnbeemusic-followed-artists",
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState || {}) as Partial<ArtistStoreState>;
+        return {
+          ...currentState,
+          followedArtists: sanitizeFollowedArtists(persisted.followedArtists),
+        };
+      },
     }
   )
 );

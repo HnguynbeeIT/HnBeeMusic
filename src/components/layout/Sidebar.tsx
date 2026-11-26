@@ -219,7 +219,9 @@ export function Sidebar() {
               </div>
             )}
 
-            {userPlaylists.map((pl) => (
+            {(Array.isArray(userPlaylists) ? userPlaylists : []).map((pl) => {
+              const plTracks = Array.isArray(pl?.tracks) ? pl.tracks : [];
+              return (
               <div
                 key={pl.id}
                 className="group flex w-full items-center gap-2.5 rounded-xl p-1.5 text-left transition-colors hover:bg-white/5"
@@ -227,15 +229,15 @@ export function Sidebar() {
                 <button
                   type="button"
                   onClick={() =>
-                    pl.tracks.length > 0
-                      ? playTrack(pl.tracks[0], pl.tracks)
+                    plTracks.length > 0
+                      ? playTrack(plTracks[0], plTracks)
                       : router.push(`/library/playlist/${encodeURIComponent(pl.id)}`)
                   }
                   aria-label={`Phát ${pl.name}`}
                   className="relative shrink-0"
                 >
                   <TrackThumbnail
-                    src={pl.coverUrl || pl.tracks[0]?.thumbnail}
+                    src={pl.coverUrl || plTracks[0]?.thumbnail}
                     alt={pl.name}
                     className="h-10 w-10 rounded-lg"
                   />
@@ -251,11 +253,12 @@ export function Sidebar() {
                     {pl.name}
                   </p>
                   <p className="truncate text-[11px] text-zinc-500">
-                    {pl.tracks.length} bài · Cá nhân
+                    {plTracks.length} bài · Cá nhân
                   </p>
                 </Link>
               </div>
-            ))}
+              );
+            })}
 
             {CURATED_PLAYLISTS.map((pl) => (
               <button

@@ -40,12 +40,12 @@ export function useMediaSession({
       return;
     }
 
-    if (currentTrack) {
+    if (currentTrack && typeof MediaMetadata !== "undefined") {
       const artworkSrc = currentTrack.thumbnail || "/icon.png";
       try {
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: currentTrack.title,
-          artist: currentTrack.artist,
+          title: currentTrack.title || "HnBee Music",
+          artist: currentTrack.artist || "Unknown Artist",
           album: "HnBee Music",
           artwork: ARTWORK_SIZES.map((sizes) => ({
             src: artworkSrc,
@@ -103,7 +103,8 @@ export function useMediaSession({
       currentTrack &&
       typeof navigator.mediaSession.setPositionState === "function" &&
       Number.isFinite(duration) &&
-      duration > 0
+      duration > 0 &&
+      Number.isFinite(progress)
     ) {
       try {
         const clampedPos = Math.min(Math.max(0, progress), duration);
