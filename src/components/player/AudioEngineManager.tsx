@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { usePlaybackTimeStore } from "@/store/usePlaybackTimeStore";
 import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
 import { extractYouTubeId } from "@/lib/audio/url-parser";
 import { useMediaSession } from "@/hooks/useMediaSession";
@@ -42,12 +43,10 @@ export function AudioEngineManager() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
-  const progress = usePlayerStore((s) => s.progress);
-  const duration = usePlayerStore((s) => s.duration);
   const seekTarget = usePlayerStore((s) => s.seekTarget);
 
-  const setProgress = usePlayerStore((s) => s.setProgress);
-  const setDuration = usePlayerStore((s) => s.setDuration);
+  const setProgress = usePlaybackTimeStore((s) => s.setProgress);
+  const setDuration = usePlaybackTimeStore((s) => s.setDuration);
   const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
   const setIsLoading = usePlayerStore((s) => s.setIsLoading);
   const setPlaybackError = usePlayerStore((s) => s.setPlaybackError);
@@ -301,14 +300,21 @@ export function AudioEngineManager() {
     };
   }, [sponsorBlockVideoId, autoSkipSponsor]);
 
-  // SINGLE ACTIVE ENGINE: pause & reset currentTime = 0 on previous engine immediately
+  // Cleanup AudioContext on unmount to prevent memory leaks
   useEffect(() => {
-    const prev = prevEngineRef.current;
-    if (prev && prev !== activeEngine) {
-      if (prev === "youtube") ytRef.current?.stopAndReset();
-      if (prev === "html5") html5Ref.current?.stopAndReset();
-      if (prev === "soundcloud-widget") scWidgetRef.current?.stopAndReset();
-    }
+    return () => {
+      if (keepAliveCtxRef.current) {
+        void keepAliveCtxRef.current.close().catch(() => {});
+        keepAliveCtxRef.current = null;
+      }
+    };
+  }, []);
+
+  // SINGLE ACTIVE ENGINE (Zero Double-Audio): pause & reset ALL inactive engines immediately
+  useEffect(() => {
+    if (activeEngine !== "youtube") ytRef.current?.stopAndReset();
+    if (activeEngine !== "html5") html5Ref.current?.stopAndReset();
+    if (activeEngine !== "soundcloud-widget") scWidgetRef.current?.stopAndReset();
     prevEngineRef.current = activeEngine;
   }, [activeEngine]);
 
@@ -519,8 +525,6 @@ export function AudioEngineManager() {
   useMediaSession({
     currentTrack,
     isPlaying,
-    progress,
-    duration,
     onPlay: handleMediaPlay,
     onPause: handleMediaPause,
     onPrev: playPrev,

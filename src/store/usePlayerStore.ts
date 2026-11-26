@@ -9,6 +9,7 @@ import type {
 } from "@/lib/audio/types";
 import { sanitizeTracks } from "@/lib/audio/sanitize";
 import { unlockGlobalAudioNow } from "@/lib/audio/ios-unlock";
+import { usePlaybackTimeStore } from "./usePlaybackTimeStore";
 
 interface PlayerState {
   currentTrack: UnifiedTrack | null;
@@ -122,6 +123,7 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
+        usePlaybackTimeStore.getState().resetTime(track.duration || 0);
         set({
           currentTrack: track,
           sourceType: track.source,
@@ -144,6 +146,7 @@ export const usePlayerStore = create<PlayerState>()(
           Math.min(Math.floor(startIndex), tracks.length - 1)
         );
         const targetTrack = tracks[safeIndex];
+        usePlaybackTimeStore.getState().resetTime(targetTrack.duration || 0);
         set({
           currentTrack: targetTrack,
           sourceType: targetTrack.source,
@@ -209,6 +212,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
 
         const nextTrack = queue[nextIdx];
+        usePlaybackTimeStore.getState().resetTime(nextTrack.duration || 0);
         set({
           currentTrack: nextTrack,
           sourceType: nextTrack.source,
@@ -223,11 +227,12 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playPrev: () => {
-        const { queue, queueIndex, progress, repeatMode, currentTrack } = get();
+        const { queue, queueIndex, repeatMode, currentTrack } = get();
         if (!currentTrack) return;
 
         // If > 3 seconds into track, restart current track
-        if (progress > 3) {
+        if (usePlaybackTimeStore.getState().progress > 3) {
+          usePlaybackTimeStore.getState().setProgress(0);
           set({ progress: 0, seekTarget: 0 });
           return;
         }
@@ -246,6 +251,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
 
         const prevTrack = queue[prevIdx];
+        usePlaybackTimeStore.getState().resetTime(prevTrack.duration || 0);
         set({
           currentTrack: prevTrack,
           sourceType: prevTrack.source,
@@ -259,15 +265,14 @@ export const usePlayerStore = create<PlayerState>()(
         });
       },
 
-      setProgress: (seconds) => set({ progress: seconds }),
+      setProgress: (seconds) => usePlaybackTimeStore.getState().setProgress(seconds),
       setDuration: (seconds) => {
-        if (Number.isFinite(seconds) && seconds > 0) {
-          set({ duration: seconds });
-        }
+        usePlaybackTimeStore.getState().setDuration(seconds);
       },
       seekTo: (seconds) => {
         const clamped = Math.max(0, seconds);
-        set({ progress: clamped, seekTarget: clamped });
+        usePlaybackTimeStore.getState().setProgress(clamped);
+        set({ seekTarget: clamped });
       },
       clearSeekTarget: () => set({ seekTarget: null }),
 

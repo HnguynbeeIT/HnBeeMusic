@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { usePlaybackTimeStore } from "@/store/usePlaybackTimeStore";
 import {
   useLyricsStore,
   type LyricsFontSize,
@@ -29,7 +30,7 @@ import {
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { SourceBadge } from "@/components/track/SourceBadge";
 import { ArtistLink } from "@/components/artist/ArtistLink";
-import { SeekBar } from "./SeekBar";
+import { PlayerSeekBar } from "./PlayerSeekBar";
 
 const KARAOKE_FONT_CLASSES: Record<LyricsFontSize, string> = {
   sm: "text-xl sm:text-2xl leading-relaxed",
@@ -54,8 +55,8 @@ export function FullScreenLyricsModal() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isLoading = usePlayerStore((s) => s.isLoading);
-  const progress = usePlayerStore((s) => s.progress);
-  const duration = usePlayerStore((s) => s.duration);
+  // Zero re-renders when FullScreenLyricsModal is closed!
+  const progress = usePlaybackTimeStore((s) => (isOpen ? s.progress : 0));
   const togglePlay = usePlayerStore((s) => s.togglePlay);
   const playNext = usePlayerStore((s) => s.playNext);
   const playPrev = usePlayerStore((s) => s.playPrev);
@@ -243,9 +244,7 @@ export function FullScreenLyricsModal() {
               </div>
 
               <div className="mt-6 w-full max-w-[300px]">
-                <SeekBar
-                  progress={progress}
-                  duration={duration}
+                <PlayerSeekBar
                   source={currentTrack.source}
                   onSeek={seekTo}
                 />

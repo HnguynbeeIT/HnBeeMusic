@@ -55,12 +55,29 @@ export const Html5AudioAdapter = forwardRef<
     return () => registerGlobalAudioElement(null);
   }, []);
 
-  useImperativeHandle(ref, () => ({
-    play: () => {
-      const el = audioRef.current;
-      if (!el) return;
-      void el.play().catch(() => {});
-    },
+    const safePlay = (el: HTMLAudioElement) => {
+      try {
+        const promise = el.play();
+        if (promise && typeof promise.catch === "function") {
+          promise.catch((err: unknown) => {
+            // Ignore expected AbortError during rapid track switching or NotAllowedError before gesture
+            if (
+              err instanceof DOMException &&
+              (err.name === "AbortError" || err.name === "NotAllowedError")
+            ) {
+              return;
+            }
+          });
+        }
+      } catch {}
+    };
+
+    useImperativeHandle(ref, () => ({
+      play: () => {
+        const el = audioRef.current;
+        if (!el) return;
+        safePlay(el);
+      },
     pause: () => {
       audioRef.current?.pause();
     },
@@ -121,9 +138,7 @@ export const Html5AudioAdapter = forwardRef<
       el.src = streamUrl;
       el.load();
       if (isPlayingRef.current) {
-        void el.play().catch(() => {
-          // Autoplay may require gesture; keep state honest
-        });
+        safePlay(el);
       }
     }
   }, [active, streamUrl]);
@@ -133,7 +148,7 @@ export const Html5AudioAdapter = forwardRef<
     const el = audioRef.current;
     if (!el || !active || !streamUrl) return;
     if (isPlaying) {
-      void el.play().catch(() => {});
+      safePlay(el);
     } else {
       el.pause();
     }

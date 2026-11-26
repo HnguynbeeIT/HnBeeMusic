@@ -6,16 +6,9 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { AmbientGlow } from "@/components/player/AmbientGlow";
 import { AudioEngineManager } from "@/components/player/AudioEngineManager";
 import { BottomPlayerBar } from "@/components/player/BottomPlayerBar";
-import { QueueDrawer } from "@/components/player/QueueDrawer";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
-import { FullScreenLyricsModal } from "@/components/player/FullScreenLyricsModal";
-import { FullScreenPlayerModal } from "@/components/player/FullScreenPlayerModal";
-import { ApiSettingsModal } from "@/components/settings/ApiSettingsModal";
-import { AuthModal } from "@/components/auth/AuthModal";
 import { CloudSyncManager } from "@/components/auth/CloudSyncManager";
-import { CreatePlaylistModal } from "@/components/playlist/CreatePlaylistModal";
-import { IOSInstallBanner } from "@/components/pwa/IOSInstallBanner";
-import { AboutModal } from "@/components/AboutModal";
+import { LazyModals } from "@/components/layout/LazyModals";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -64,31 +57,24 @@ export default function RootLayout({
       lang="vi"
       className={`dark ${inter.variable} ${jetbrainsMono.variable}`}
     >
-      <body className="min-h-screen bg-[#09090b] font-sans text-zinc-100 antialiased selection:bg-emerald-400/30 selection:text-white">
+      <body className="min-h-screen overflow-x-hidden bg-[#09090b] font-sans text-zinc-100 antialiased selection:bg-emerald-400/30 selection:text-white">
         <MotionProvider>
           <AmbientGlow />
           <Sidebar />
 
-          {/* Main scrollable viewport: flex-1 overflow-y-auto pb-32, desktop offset for w-64 m-2 sidebar */}
-          <main className="min-h-screen flex-1 overflow-y-auto pb-36 md:pb-32 md:pl-[272px]">
+          {/* Main scrollable viewport: flex-1 overflow-y-auto pb-36, desktop offset for w-64 m-2 sidebar */}
+          <main className="min-h-screen flex-1 overflow-x-hidden overflow-y-auto pb-36 md:pb-32 md:pl-[272px]">
             <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
               {children}
             </div>
           </main>
 
-          {/* Persistent Global Audio Engine & Glassmorphism Player Overlays */}
+          {/* Persistent Global Audio Engine, Player Bar & Lazy-Loaded Modals */}
           <AudioEngineManager />
           <BottomPlayerBar />
-          <QueueDrawer />
           <LyricsPanel />
-          <FullScreenLyricsModal />
-          <FullScreenPlayerModal />
-          <ApiSettingsModal />
-          <AuthModal />
-          <CreatePlaylistModal />
-          <AboutModal />
           <CloudSyncManager />
-          <IOSInstallBanner />
+          <LazyModals />
         </MotionProvider>
       </body>
     </html>

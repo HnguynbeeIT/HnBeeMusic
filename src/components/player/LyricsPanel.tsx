@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { usePlaybackTimeStore } from "@/store/usePlaybackTimeStore";
 import {
   useLyricsStore,
   type LyricsFontSize,
@@ -40,8 +41,9 @@ const FONT_OPTIONS: Array<{ id: LyricsFontSize; label: string }> = [
 export function LyricsPanel() {
   const isOpen = usePlayerStore((s) => s.isLyricsOpen);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const progress = usePlayerStore((s) => s.progress);
-  const duration = usePlayerStore((s) => s.duration);
+  // Only subscribe to live progress while drawer is open (0 re-renders when closed!)
+  const progress = usePlaybackTimeStore((s) => (isOpen ? s.progress : 0));
+  const duration = usePlaybackTimeStore((s) => (isOpen ? s.duration : 0));
   const setLyricsOpen = usePlayerStore((s) => s.setLyricsOpen);
   const seekTo = usePlayerStore((s) => s.seekTo);
 

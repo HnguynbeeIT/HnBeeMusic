@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle,
@@ -36,14 +36,12 @@ import {
 import { SourceBadge } from "@/components/track/SourceBadge";
 import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { ArtistLink } from "@/components/artist/ArtistLink";
-import { SeekBar } from "./SeekBar";
+import { MobileMiniProgressBar, PlayerSeekBar } from "./PlayerSeekBar";
 
 export function BottomPlayerBar() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isLoading = usePlayerStore((s) => s.isLoading);
-  const progress = usePlayerStore((s) => s.progress);
-  const duration = usePlayerStore((s) => s.duration);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
   const isShuffle = usePlayerStore((s) => s.isShuffle);
@@ -78,24 +76,37 @@ export function BottomPlayerBar() {
   const toggleAudioOnlyMode = useSettingsStore((s) => s.toggleAudioOnlyMode);
 
   const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showTimedNotice = (msg: string, ms = 3000) => {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    setPlaybackNotice(msg);
+    noticeTimerRef.current = setTimeout(() => {
+      setPlaybackNotice(null);
+    }, ms);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
 
   const handleToggleAudioOnly = () => {
     const next = !audioOnlyMode;
     toggleAudioOnlyMode();
-    setPlaybackNotice(
+    showTimedNotice(
       next
         ? "Đã bật chế độ Audio Only / Phát nền (Tiết kiệm pin & phát khi khóa màn hình)"
-        : "Đã tắt chế độ Audio Only"
+        : "Đã tắt chế độ Audio Only",
+      3200
     );
-    setTimeout(() => setPlaybackNotice(null), 3200);
   };
 
   const isLiked = currentTrack
     ? likedTracks.some((t) => t.id === currentTrack.id)
     : false;
   const effectiveVolume = isMuted ? 0 : volume;
-  const progressRatio =
-    duration > 0 ? Math.min(1, Math.max(0, progress / duration)) : 0;
   const theme = getSourceTheme(currentTrack?.source);
   const shouldMarquee = Boolean(currentTrack && currentTrack.title.length > 26);
 
@@ -203,13 +214,8 @@ export function BottomPlayerBar() {
                 )}
               </motion.button>
             </div>
-            {/* Source-colored hairline progress */}
-            <div className="h-0.5 w-full bg-white/10">
-              <div
-                className={`h-full w-full origin-left ${theme.barClass}`}
-                style={{ transform: `scaleX(${progressRatio})` }}
-              />
-            </div>
+            {/* Source-colored hairline progress (isolated leaf subscriber) */}
+            <MobileMiniProgressBar source={currentTrack.source} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -312,12 +318,12 @@ export function BottomPlayerBar() {
                               onClick={() => {
                                 addTrackToPlaylist(pl.id, currentTrack);
                                 setPlaylistMenuOpen(false);
-                                setPlaybackNotice(
+                                showTimedNotice(
                                   alreadyIn
                                     ? `Bài hát đã có trong "${pl.name}"`
-                                    : `Đã thêm vào "${pl.name}"`
+                                    : `Đã thêm vào "${pl.name}"`,
+                                  2600
                                 );
-                                setTimeout(() => setPlaybackNotice(null), 2600);
                               }}
                               className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-zinc-200 hover:bg-white/10"
                             >
@@ -442,9 +448,7 @@ export function BottomPlayerBar() {
           </div>
 
           <div className="w-full max-w-lg">
-            <SeekBar
-              progress={progress}
-              duration={duration}
+            <PlayerSeekBar
               source={currentTrack?.source}
               onSeek={seekTo}
               disabled={!currentTrack}
