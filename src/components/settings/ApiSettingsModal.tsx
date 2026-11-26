@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ShieldCheck,
   SkipForward,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -31,8 +32,10 @@ export function ApiSettingsModal() {
   const spotifyClientSecret = useSettingsStore((s) => s.spotifyClientSecret);
   const soundcloudClientId = useSettingsStore((s) => s.soundcloudClientId);
   const autoSkipSponsor = useSettingsStore((s) => s.autoSkipSponsor);
+  const crossfadeDuration = useSettingsStore((s) => s.crossfadeDuration);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const setAutoSkipSponsor = useSettingsStore((s) => s.setAutoSkipSponsor);
+  const setCrossfadeDuration = useSettingsStore((s) => s.setCrossfadeDuration);
   const saveKeys = useSettingsStore((s) => s.saveKeys);
   const clearKeys = useSettingsStore((s) => s.clearKeys);
 
@@ -129,7 +132,7 @@ export function ApiSettingsModal() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 16 }}
             transition={SPRING_PHYSICS}
-            className="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/85 shadow-2xl shadow-black/70 backdrop-blur-xl"
+            className="relative z-10 flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/90 shadow-2xl shadow-black/70 backdrop-blur-xl"
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
@@ -188,7 +191,7 @@ export function ApiSettingsModal() {
             </div>
 
             {/* Body */}
-            <form onSubmit={handleSubmit} className="space-y-4 p-6">
+            <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto p-6">
               {/* Privacy notice */}
               <div className="flex items-start gap-2.5 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-relaxed text-zinc-300">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
@@ -320,6 +323,58 @@ export function ApiSettingsModal() {
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* Smooth Crossfade Slider & Presets */}
+              <div className="space-y-2.5 rounded-2xl border border-white/10 bg-white/[0.03] px-3.5 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                      <SlidersHorizontal className="h-3.5 w-3.5 text-sky-400" />
+                      Chuyển bài mượt (Crossfade)
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-zinc-400">
+                      Tải trước bài kế tiếp &amp; chuyển âm lượng êm ái không ngắt quãng.
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-sky-400/30 bg-sky-500/15 px-2.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-sky-300">
+                    {crossfadeDuration === 0 ? "Tắt" : `${crossfadeDuration}s`}
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={8}
+                  step={1}
+                  value={crossfadeDuration}
+                  aria-label="Thời lượng chuyển bài mượt Crossfade"
+                  onChange={(e) => setCrossfadeDuration(Number(e.target.value))}
+                  className="h-1.5 w-full cursor-pointer accent-emerald-400"
+                />
+
+                <div className="flex items-center justify-between gap-1.5">
+                  {[
+                    { val: 0, label: "Tắt" },
+                    { val: 2, label: "2s" },
+                    { val: 3, label: "3s" },
+                    { val: 5, label: "5s" },
+                    { val: 8, label: "8s" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.val}
+                      type="button"
+                      onClick={() => setCrossfadeDuration(preset.val)}
+                      className={`flex-1 rounded-lg border py-1 text-[11px] font-medium transition-colors ${
+                        crossfadeDuration === preset.val
+                          ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
+                          : "border-white/10 bg-black/30 text-zinc-400 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Server Cloud Sync Status Card */}
