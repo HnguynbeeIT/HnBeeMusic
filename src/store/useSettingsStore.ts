@@ -12,10 +12,13 @@ export interface ApiKeysConfig {
 
 interface SettingsState extends ApiKeysConfig {
   isSettingsOpen: boolean;
+  isAboutOpen: boolean;
   autoSkipSponsor: boolean;
   audioOnlyMode: boolean;
   setSettingsOpen: (open: boolean) => void;
   toggleSettingsOpen: () => void;
+  setAboutOpen: (open: boolean) => void;
+  toggleAboutOpen: () => void;
   setAutoSkipSponsor: (enabled: boolean) => void;
   setAudioOnlyMode: (enabled: boolean) => void;
   toggleAudioOnlyMode: () => void;
@@ -35,12 +38,15 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       ...EMPTY_KEYS,
       isSettingsOpen: false,
+      isAboutOpen: false,
       autoSkipSponsor: true,
       audioOnlyMode: false,
 
       setSettingsOpen: (open) => set({ isSettingsOpen: open }),
       toggleSettingsOpen: () =>
         set((s) => ({ isSettingsOpen: !s.isSettingsOpen })),
+      setAboutOpen: (open) => set({ isAboutOpen: open }),
+      toggleAboutOpen: () => set((s) => ({ isAboutOpen: !s.isAboutOpen })),
       setAutoSkipSponsor: (enabled) => set({ autoSkipSponsor: enabled }),
       setAudioOnlyMode: (enabled) => set({ audioOnlyMode: enabled }),
       toggleAudioOnlyMode: () =>

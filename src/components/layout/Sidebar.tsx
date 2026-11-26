@@ -8,6 +8,7 @@ import {
   Compass,
   Flame,
   Home,
+  Info,
   Library,
   Play,
   Search,
@@ -52,6 +53,7 @@ export function Sidebar() {
   const likedCount = usePlayerStore((s) => s.likedTracks.length);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
+  const setAboutOpen = useSettingsStore((s) => s.setAboutOpen);
   const hasCustomKeys = useSettingsStore((s) =>
     Boolean(
       s.youtubeApiKey ||
@@ -97,6 +99,16 @@ export function Sidebar() {
         </Link>
         <div className="flex items-center gap-1.5">
           <RegionSelector compact />
+          <motion.button
+            type="button"
+            {...BUTTON_MOTION}
+            onClick={() => setAboutOpen(true)}
+            aria-label="Giới thiệu HnBee Music"
+            title="Giới thiệu HnBee Music"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/70 text-zinc-300"
+          >
+            <Info className="h-4 w-4" />
+          </motion.button>
           <motion.button
             type="button"
             {...BUTTON_MOTION}
@@ -389,7 +401,15 @@ export function Sidebar() {
               </>
             )}
           </motion.button>
-          <BrandCredit className="mt-2.5 text-center" />
+          <button
+            type="button"
+            onClick={() => setAboutOpen(true)}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Info className="h-3.5 w-3.5 text-emerald-400" />
+            Giới thiệu HnBee Music
+          </button>
+          <BrandCredit className="mt-2 text-center" />
         </div>
       </aside>
 
