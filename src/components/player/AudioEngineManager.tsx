@@ -154,8 +154,12 @@ export function AudioEngineManager() {
   const skippedSponsorKeysRef = useRef<Set<string>>(new Set());
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track IDs that fell back to SoundCloud Widget after HTML5 stream extraction failed (non-iOS)
+  // Track IDs that fell back to SoundCloud Widget after HTML5 stream extraction failed
   const [scWidgetFallbackIds, setScWidgetFallbackIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  // Track IDs on iOS where 2.5s direct HTML5 audio-only lookup timed out / missed -> fall back cleanly to YouTube IFrame!
+  const [iosYtFallbackIds, setIosYtFallbackIds] = useState<Set<string>>(
     () => new Set()
   );
   const [scResolvingId, setScResolvingId] = useState<string | null>(null);
@@ -367,9 +371,37 @@ export function AudioEngineManager() {
       };
     }
 
-    // iOS STRICT RULE: NEVER use YouTube Video IFrame or SoundCloud IFrame on iPhone/iPad!
-    // Hold in loading state while `/api/audio-stream` fetches direct HTML5 <audio> URL (~800ms or 0ms cached).
+    // iOS HYBRID MODE:
+    // Step 1: Try fast direct HTML5 <audio> for up to 2.5s (enables Lock Screen / Home Screen audio if available).
+    // Step 2: If direct audio is unavailable or exceeds 2.5s, fall back seamlessly to YouTube IFrame (NEVER auto-skip!).
     if (isIOS) {
+      if (iosYtFallbackIds.has(currentTrack.id)) {
+        if (ytIdForTrack) {
+          return {
+            activeEngine: "youtube" as ActiveEngine,
+            youtubeVideoId: ytIdForTrack,
+            sponsorBlockVideoId: ytIdForTrack,
+            html5StreamUrl: null,
+            soundCloudWidgetUrl: null,
+          };
+        }
+        if (
+          currentTrack.source === "soundcloud" ||
+          (currentTrack.resolvedSource === "soundcloud" &&
+            currentTrack.streamUrl)
+        ) {
+          return {
+            activeEngine: "soundcloud-widget" as ActiveEngine,
+            youtubeVideoId: null,
+            sponsorBlockVideoId: null,
+            html5StreamUrl: null,
+            soundCloudWidgetUrl:
+              currentTrack.source === "soundcloud"
+                ? currentTrack.sourceUrl
+                : currentTrack.streamUrl!,
+          };
+        }
+      }
       return {
         activeEngine: null as ActiveEngine,
         youtubeVideoId: ytIdForTrack,
@@ -443,7 +475,7 @@ export function AudioEngineManager() {
       html5StreamUrl: null,
       soundCloudWidgetUrl: null,
     };
-  }, [currentTrack, scWidgetFallbackIds, cleanAudioOverrides, isIOS]);
+  }, [currentTrack, scWidgetFallbackIds, iosYtFallbackIds, cleanAudioOverrides, isIOS]);
 
   // SPONSORBLOCK: fetch skip segments whenever a YouTube videoId becomes active
   useEffect(() => {
@@ -474,11 +506,18 @@ export function AudioEngineManager() {
     };
   }, []);
 
-  // SINGLE ACTIVE ENGINE (Zero Double-Audio): pause & reset inactive engines immediately
+  // SINGLE ACTIVE ENGINE (Zero Double-Audio): pause/stop ALL inactive engines immediately
   useEffect(() => {
     if (activeEngine !== "youtube") ytRef.current?.stopAndReset();
     if (activeEngine !== "html5") {
-      // On iOS, NEVER strip `<audio>` src while briefly resolving next track's direct audio URL
+      // Immediately pause <audio> whenever YouTube/SoundCloud takes over so two tracks NEVER overlap
+      if (
+        activeEngine === "youtube" ||
+        activeEngine === "soundcloud-widget"
+      ) {
+        html5Ref.current?.pause();
+      }
+      // On iOS, keep `<audio>` unlocked during brief track-to-track transitions (never strip src unnecessarily)
       if (!isIOS || !currentTrack) {
         html5Ref.current?.stopAndReset();
       }
@@ -487,14 +526,16 @@ export function AudioEngineManager() {
     prevEngineRef.current = activeEngine;
   }, [activeEngine, isIOS, currentTrack]);
 
-  // iOS MANDATORY DIRECT AUDIO-ONLY RESOLVER (`/api/audio-stream` -> native HTML5 `<audio>`)
+  // iOS HYBRID AUDIO-FIRST RESOLVER:
+  // Step 1: Try direct HTML5 `<audio>` for up to 2.5s (enables Lock Screen / Home Screen audio when available).
+  // Step 2: On miss/timeout, fall back seamlessly to YouTube IFrame Player (NO error toast, NO auto-skip!).
   useEffect(() => {
     if (!isIOS || !currentTrack) return;
     if (cleanAudioOverrides[currentTrack.id]?.url) return;
     if (isDirectAudioUrl(currentTrack.streamUrl)) return;
+    if (iosYtFallbackIds.has(currentTrack.id)) return;
 
-    // For unmatched Spotify tracks, wait for the fast Spotify matcher to supply youtubeId/streamUrl first
-    // (unless it already has a cached direct audio URL in localStorage!)
+    // 0ms Instant Hit from hnbee_stream_cache_v2
     const cachedDirect = getCachedDirectAudioUrl(currentTrack.id);
     if (cachedDirect) {
       setCleanAudioOverrides((prev) => ({
@@ -508,6 +549,7 @@ export function AudioEngineManager() {
       return;
     }
 
+    // For unmatched Spotify tracks, wait for fast Spotify Strict Matching to supply youtubeId first
     if (
       currentTrack.source === "spotify" &&
       !(currentTrack.streamUrl && currentTrack.resolvedSource)
@@ -521,10 +563,33 @@ export function AudioEngineManager() {
     const reqId = playRequestIdRef.current;
     const targetTrack = currentTrack;
     const targetYtId = youtubeVideoId;
+    const hasIframeFallback = Boolean(
+      targetYtId ||
+        targetTrack.source === "soundcloud" ||
+        (targetTrack.resolvedSource === "soundcloud" && targetTrack.streamUrl)
+    );
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4500);
+    // Strict 2.5s budget for direct audio-only lookup before activating YouTube IFrame Player!
+    const timeout = setTimeout(() => controller.abort(), 2500);
 
     setIsLoading(true);
+
+    const activateIframeFallbackOrFail = () => {
+      if (reqId !== playRequestIdRef.current) return;
+      if (hasIframeFallback) {
+        // Step 2: Mandatory seamless fallback to YouTube IFrame (1px x 1px, playsinline: 1, autoplay: 1)
+        setPlaybackError(null);
+        setIosYtFallbackIds((prev) => new Set(prev).add(targetTrack.id));
+        return;
+      }
+      setIsLoading(false);
+      if (queue.length > 1) {
+        playNext(false);
+      } else {
+        setIsPlaying(false);
+        setPlaybackError("Không thể tìm thấy nguồn phát cho bài hát này.");
+      }
+    };
 
     fetchDirectAudioStreamForTrack(targetTrack, targetYtId, controller.signal)
       .then((result) => {
@@ -536,6 +601,8 @@ export function AudioEngineManager() {
               targetTrack.resolvedSource ||
               (targetTrack.source === "soundcloud" ? "soundcloud" : "youtube"),
             youtubeId: targetYtId || undefined,
+            matchedTitle: targetTrack.matchedTitle,
+            matchScore: targetTrack.matchScore,
           });
           setCleanAudioOverrides((prev) => ({
             ...prev,
@@ -547,25 +614,11 @@ export function AudioEngineManager() {
           }));
           setPlaybackError(null);
         } else {
-          setIsLoading(false);
-          if (queue.length > 1) {
-            showNotice(
-              "Không lấy được luồng Audio iOS cho bài này — tự động chuyển bài tiếp theo"
-            );
-            playNext(false);
-          } else {
-            setIsPlaying(false);
-            setPlaybackError(
-              "Chưa thể giải mã luồng âm thanh nền iOS cho bài hát này."
-            );
-          }
+          activateIframeFallbackOrFail();
         }
       })
       .catch(() => {
-        if (reqId !== playRequestIdRef.current) return;
-        setIsLoading(false);
-        setIsPlaying(false);
-        setPlaybackError("Kết nối quá hạn khi tải luồng âm thanh nền iOS.");
+        activateIframeFallbackOrFail();
       })
       .finally(() => {
         clearTimeout(timeout);
@@ -575,12 +628,12 @@ export function AudioEngineManager() {
     isIOS,
     currentTrack,
     cleanAudioOverrides,
+    iosYtFallbackIds,
     youtubeVideoId,
     fetchDirectAudioStreamForTrack,
     setIsLoading,
     setIsPlaying,
     setPlaybackError,
-    showNotice,
     queue.length,
     playNext,
   ]);
@@ -844,11 +897,13 @@ export function AudioEngineManager() {
   const handleMediaPlay = useCallback(() => {
     setIsPlaying(true);
     if (activeEngine === "html5") html5Ref.current?.play();
+    if (activeEngine === "youtube") ytRef.current?.play();
   }, [setIsPlaying, activeEngine]);
 
   const handleMediaPause = useCallback(() => {
     setIsPlaying(false);
     if (activeEngine === "html5") html5Ref.current?.pause();
+    if (activeEngine === "youtube") ytRef.current?.pause();
   }, [setIsPlaying, activeEngine]);
 
   const handleMediaNext = useCallback(() => playNext(false), [playNext]);
@@ -1200,17 +1255,42 @@ export function AudioEngineManager() {
     ]
   );
 
-  // YouTube Clean Audio Stream Fallback (Desktop / Android when embed is blocked 101/150 or stalled > 4s)
+  // YouTube Clean Audio Stream Fallback (when embed is blocked 101/150 or stalled > 4s)
   const handleYouTubeFallbackRequest = useCallback(
     async (reason: "embed_blocked" | "stall_timeout") => {
       if (!currentTrack || !youtubeVideoId) return;
+
+      // On iOS, if we already fell back to YouTube IFrame because HTML5 audio missed/failed:
+      // - ignore stall_timeout (don't loop back into failed HTML5 audio)
+      // - only skip to next track if YouTube IFrame ITSELF is hard-blocked (embed_blocked)
+      if (isIOS && iosYtFallbackIds.has(currentTrack.id)) {
+        if (reason === "embed_blocked") {
+          if (queue.length > 1) {
+            showNotice("Bài hát bị chặn phát nhúng — tự động chuyển bài tiếp theo");
+            playNext(false);
+          } else {
+            setIsPlaying(false);
+            setIsLoading(false);
+            setPlaybackError(
+              "Video YouTube này không cho phép phát nhúng (embed)."
+            );
+          }
+        }
+        return;
+      }
+
       if (ytFallbackAttemptedRef.current.has(currentTrack.id)) {
         if (reason === "embed_blocked") {
-          setIsPlaying(false);
-          setIsLoading(false);
-          setPlaybackError(
-            "Video YouTube này không cho phép phát nhúng (embed)."
-          );
+          if (queue.length > 1) {
+            showNotice("Video bị chặn phát nhúng — tự động chuyển bài tiếp theo");
+            playNext(false);
+          } else {
+            setIsPlaying(false);
+            setIsLoading(false);
+            setPlaybackError(
+              "Video YouTube này không cho phép phát nhúng (embed)."
+            );
+          }
         }
         return;
       }
@@ -1256,6 +1336,8 @@ export function AudioEngineManager() {
       }
     },
     [
+      isIOS,
+      iosYtFallbackIds,
       currentTrack,
       youtubeVideoId,
       fetchDirectAudioStreamForTrack,
@@ -1296,31 +1378,59 @@ export function AudioEngineManager() {
 
   const handleError = useCallback(
     (msg: string) => {
+      // Only skip to next track when YouTube IFrame itself fails AFTER HTML5 Audio also failed
+      if (isIOS && activeEngine === "youtube" && queue.length > 1) {
+        playNext(false);
+        return;
+      }
       setPlaybackError(msg);
     },
-    [setPlaybackError]
+    [isIOS, activeEngine, queue.length, playNext, setPlaybackError]
   );
 
   const handleHtml5Error = useCallback(() => {
     if (!currentTrack) return;
 
-    // On iOS, if a cached/signed direct audio URL failed/expired, refresh it ONCE from `/api/audio-stream`
+    // On iOS, if a direct HTML5 audio stream fails/expires (e.g. 403/network), seamlessly fall back
+    // to YouTube IFrame Player with the matched youtubeId — NEVER show error or auto-skip!
     if (isIOS) {
       clearCachedDirectAudioUrl(currentTrack.id);
+      setCleanAudioOverrides((prev) => {
+        if (!prev[currentTrack.id]) return prev;
+        const next = { ...prev };
+        delete next[currentTrack.id];
+        return next;
+      });
+
+      const ytIdForTrack =
+        currentTrack.source === "youtube"
+          ? extractYouTubeId(currentTrack.sourceUrl)
+          : currentTrack.resolvedSource === "youtube" && currentTrack.streamUrl
+          ? extractYouTubeId(currentTrack.streamUrl)
+          : null;
+
+      if (ytIdForTrack) {
+        setPlaybackError(null);
+        setIosYtFallbackIds((prev) => new Set(prev).add(currentTrack.id));
+        return;
+      }
+
+      if (
+        currentTrack.source === "soundcloud" ||
+        currentTrack.resolvedSource === "soundcloud"
+      ) {
+        setIosYtFallbackIds((prev) => new Set(prev).add(currentTrack.id));
+        return;
+      }
+
       if (!iosAudioRetriedRef.current.has(currentTrack.id)) {
         iosAudioRetriedRef.current.add(currentTrack.id);
-        setCleanAudioOverrides((prev) => {
-          const next = { ...prev };
-          delete next[currentTrack.id];
-          return next;
-        });
         return;
       }
       if (queue.length > 1) {
-        showNotice("Luồng âm thanh gặp sự cố — tự động chuyển bài tiếp theo");
         playNext(false);
       } else {
-        setPlaybackError("Không thể phát luồng âm thanh nền cho bài hát này.");
+        setPlaybackError("Không thể phát nguồn âm thanh cho bài hát này.");
       }
       return;
     }
@@ -1350,26 +1460,23 @@ export function AudioEngineManager() {
     queue.length,
     playNext,
     setPlaybackError,
-    showNotice,
   ]);
 
   return (
     <>
-      {!isIOS && (
-        <YouTubeAdapter
-          ref={ytRef}
-          videoId={youtubeVideoId}
-          active={activeEngine === "youtube"}
-          isPlaying={activeEngine === "youtube" && isPlaying}
-          volume={outputVolume}
-          onProgress={handleProgress}
-          onDuration={setDuration}
-          onStateChange={handleStateChange}
-          onEnded={handleEnded}
-          onError={handleError}
-          onFallbackRequest={handleYouTubeFallbackRequest}
-        />
-      )}
+      <YouTubeAdapter
+        ref={ytRef}
+        videoId={activeEngine === "youtube" ? youtubeVideoId : null}
+        active={activeEngine === "youtube"}
+        isPlaying={activeEngine === "youtube" && isPlaying}
+        volume={outputVolume}
+        onProgress={handleProgress}
+        onDuration={setDuration}
+        onStateChange={handleStateChange}
+        onEnded={handleEnded}
+        onError={handleError}
+        onFallbackRequest={handleYouTubeFallbackRequest}
+      />
       <Html5AudioAdapter
         ref={html5Ref}
         streamUrl={html5StreamUrl}
@@ -1383,20 +1490,18 @@ export function AudioEngineManager() {
         onEnded={handleEnded}
         onError={handleHtml5Error}
       />
-      {!isIOS && (
-        <SoundCloudAdapter
-          ref={scWidgetRef}
-          trackUrl={soundCloudWidgetUrl}
-          active={activeEngine === "soundcloud-widget"}
-          isPlaying={activeEngine === "soundcloud-widget" && isPlaying}
-          volume={outputVolume}
-          onProgress={handleProgress}
-          onDuration={setDuration}
-          onStateChange={handleStateChange}
-          onEnded={handleEnded}
-          onError={handleError}
-        />
-      )}
+      <SoundCloudAdapter
+        ref={scWidgetRef}
+        trackUrl={soundCloudWidgetUrl}
+        active={activeEngine === "soundcloud-widget"}
+        isPlaying={activeEngine === "soundcloud-widget" && isPlaying}
+        volume={outputVolume}
+        onProgress={handleProgress}
+        onDuration={setDuration}
+        onStateChange={handleStateChange}
+        onEnded={handleEnded}
+        onError={handleError}
+      />
     </>
   );
 }
