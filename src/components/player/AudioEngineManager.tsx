@@ -38,12 +38,42 @@ type ActiveEngine = "youtube" | "html5" | "soundcloud-widget" | null;
 function isDirectAudioUrl(url?: string): boolean {
   if (!url) return false;
   return (
+    url.startsWith("/api/audio-proxy") ||
     url.startsWith("/api/proxy-audio") ||
     /\.(mp3|m4a|ogg|wav|aac|flac|opus|m3u8)(\?.*)?$/i.test(url) ||
     /cf-media\.sndcdn\.com|media\.soundcloud\.com|audio\.sndcdn\.com|soundcloud\.cloud|discoveryprovider\.audius\.co\/v1\/tracks\/[^/]+\/stream/i.test(
       url
     )
   );
+}
+
+function buildAudioProxyUrl(
+  track: {
+    title: string;
+    artist: string;
+    duration: number;
+    source: "youtube" | "soundcloud" | "spotify";
+    sourceUrl: string;
+    streamUrl?: string;
+    resolvedSource?: "youtube" | "soundcloud";
+  },
+  ytId: string | null
+): string {
+  const params = new URLSearchParams();
+  if (ytId) params.set("v", ytId);
+  if (track.title) params.set("title", track.title);
+  if (track.artist) params.set("artist", track.artist);
+  if (track.duration > 0) params.set("duration", String(track.duration));
+  if (
+    track.source === "soundcloud" ||
+    (track.resolvedSource === "soundcloud" && track.streamUrl)
+  ) {
+    params.set(
+      "scUrl",
+      track.source === "soundcloud" ? track.sourceUrl : track.streamUrl!
+    );
+  }
+  return `/api/audio-proxy?${params.toString()}`;
 }
 
 /**
@@ -139,8 +169,11 @@ export function AudioEngineManager() {
   const prevEngineRef = useRef<ActiveEngine>(null);
   const matchingIdsRef = useRef<Set<string>>(new Set());
   const ytFallbackAttemptedRef = useRef<Set<string>>(new Set());
-  const iosAudioInFlightRef = useRef<Set<string>>(new Set());
   const iosAudioRetriedRef = useRef<Set<string>>(new Set());
+  // Tracks which trackId successfully started playing via /api/audio-proxy on iOS (clears 4s fallback watchdog)
+  const iosProxyPlayingIdRef = useRef<string | null>(null);
+  // Preserves playback timestamp when falling back mid-track from HTML5 <audio> to YouTube IFrame on iOS
+  const pendingIosResumeRef = useRef<{ trackId: string; seconds: number } | null>(null);
   // Monotonic playback session ID to cancel stale async stream resolutions
   const playRequestIdRef = useRef<number>(0);
 
@@ -371,9 +404,11 @@ export function AudioEngineManager() {
       };
     }
 
-    // iOS HYBRID MODE:
-    // Step 1: Try fast direct HTML5 <audio> for up to 2.5s (enables Lock Screen / Home Screen audio if available).
-    // Step 2: If direct audio is unavailable or exceeds 2.5s, fall back seamlessly to YouTube IFrame (NEVER auto-skip!).
+    // iOS DIRECT AUDIO PROXY FIRST -> SAFE YOUTUBE IFRAME FALLBACK:
+    // Step 1: Load `/api/audio-proxy?v=...` directly into the unlocked HTML5 `<audio>` element
+    //         so playback starts immediately and continues 100% on Home Screen / Lock Screen!
+    // Step 2: Only if `/api/audio-proxy` returns HTTP >= 400 or times out > 4s, fall back safely
+    //         to YouTube IFrame Player (`playsinline: 1`, `autoplay: 1`, `1px x 1px`) — NEVER auto-skip!
     if (isIOS) {
       if (iosYtFallbackIds.has(currentTrack.id)) {
         if (ytIdForTrack) {
@@ -402,10 +437,28 @@ export function AudioEngineManager() {
           };
         }
       }
+
+      const canUseDirectProxy = Boolean(
+        ytIdForTrack ||
+          currentTrack.source === "soundcloud" ||
+          (currentTrack.resolvedSource === "soundcloud" && currentTrack.streamUrl)
+      );
+
+      if (canUseDirectProxy) {
+        return {
+          activeEngine: "html5" as ActiveEngine,
+          youtubeVideoId: ytIdForTrack,
+          sponsorBlockVideoId: ytIdForTrack,
+          html5StreamUrl: buildAudioProxyUrl(currentTrack, ytIdForTrack),
+          soundCloudWidgetUrl: null,
+        };
+      }
+
+      // Unmatched Spotify track: wait briefly for Strict Title & Artist Matching to supply youtubeId
       return {
         activeEngine: null as ActiveEngine,
-        youtubeVideoId: ytIdForTrack,
-        sponsorBlockVideoId: ytIdForTrack,
+        youtubeVideoId: null,
+        sponsorBlockVideoId: null,
         html5StreamUrl: null,
         soundCloudWidgetUrl: null,
       };
@@ -526,116 +579,50 @@ export function AudioEngineManager() {
     prevEngineRef.current = activeEngine;
   }, [activeEngine, isIOS, currentTrack]);
 
-  // iOS HYBRID AUDIO-FIRST RESOLVER:
-  // Step 1: Try direct HTML5 `<audio>` for up to 2.5s (enables Lock Screen / Home Screen audio when available).
-  // Step 2: On miss/timeout, fall back seamlessly to YouTube IFrame Player (NO error toast, NO auto-skip!).
+  // iOS 4s `/api/audio-proxy` WATCHDOG:
+  // If direct HTML5 `<audio src="/api/audio-proxy?...">` fails to start playing within 4 seconds,
+  // seamlessly fall back to YouTube IFrame Player (playsinline: 1, autoplay: 1) — NEVER auto-skip!
   useEffect(() => {
-    if (!isIOS || !currentTrack) return;
-    if (cleanAudioOverrides[currentTrack.id]?.url) return;
-    if (isDirectAudioUrl(currentTrack.streamUrl)) return;
-    if (iosYtFallbackIds.has(currentTrack.id)) return;
-
-    // 0ms Instant Hit from hnbee_stream_cache_v2
-    const cachedDirect = getCachedDirectAudioUrl(currentTrack.id);
-    if (cachedDirect) {
-      setCleanAudioOverrides((prev) => ({
-        ...prev,
-        [currentTrack.id]: {
-          url: cachedDirect,
-          engine: "html5",
-          preservesYouTubeTimeline: Boolean(youtubeVideoId),
-        },
-      }));
-      return;
-    }
-
-    // For unmatched Spotify tracks, wait for fast Spotify Strict Matching to supply youtubeId first
     if (
-      currentTrack.source === "spotify" &&
-      !(currentTrack.streamUrl && currentTrack.resolvedSource)
+      !isIOS ||
+      !currentTrack ||
+      activeEngine !== "html5" ||
+      !isPlaying ||
+      !html5StreamUrl?.startsWith("/api/audio-proxy")
     ) {
       return;
     }
 
-    if (iosAudioInFlightRef.current.has(currentTrack.id)) return;
-    iosAudioInFlightRef.current.add(currentTrack.id);
+    if (iosProxyPlayingIdRef.current === currentTrack.id) return;
 
+    const targetTrackId = currentTrack.id;
     const reqId = playRequestIdRef.current;
-    const targetTrack = currentTrack;
-    const targetYtId = youtubeVideoId;
     const hasIframeFallback = Boolean(
-      targetYtId ||
-        targetTrack.source === "soundcloud" ||
-        (targetTrack.resolvedSource === "soundcloud" && targetTrack.streamUrl)
+      youtubeVideoId ||
+        currentTrack.source === "soundcloud" ||
+        (currentTrack.resolvedSource === "soundcloud" && currentTrack.streamUrl)
     );
-    const controller = new AbortController();
-    // Strict 2.5s budget for direct audio-only lookup before activating YouTube IFrame Player!
-    const timeout = setTimeout(() => controller.abort(), 2500);
+    if (!hasIframeFallback) return;
 
-    setIsLoading(true);
-
-    const activateIframeFallbackOrFail = () => {
-      if (reqId !== playRequestIdRef.current) return;
-      if (hasIframeFallback) {
-        // Step 2: Mandatory seamless fallback to YouTube IFrame (1px x 1px, playsinline: 1, autoplay: 1)
+    const timer = setTimeout(() => {
+      if (
+        reqId === playRequestIdRef.current &&
+        iosProxyPlayingIdRef.current !== targetTrackId
+      ) {
         setPlaybackError(null);
-        setIosYtFallbackIds((prev) => new Set(prev).add(targetTrack.id));
-        return;
+        setIosYtFallbackIds((prev) => new Set(prev).add(targetTrackId));
       }
-      setIsLoading(false);
-      if (queue.length > 1) {
-        playNext(false);
-      } else {
-        setIsPlaying(false);
-        setPlaybackError("Không thể tìm thấy nguồn phát cho bài hát này.");
-      }
-    };
+    }, 4000);
 
-    fetchDirectAudioStreamForTrack(targetTrack, targetYtId, controller.signal)
-      .then((result) => {
-        if (reqId !== playRequestIdRef.current) return;
-        if (result?.streamUrl) {
-          setCachedDirectAudioUrl(targetTrack.id, result.streamUrl, {
-            streamUrl: targetTrack.streamUrl || targetTrack.sourceUrl,
-            resolvedSource:
-              targetTrack.resolvedSource ||
-              (targetTrack.source === "soundcloud" ? "soundcloud" : "youtube"),
-            youtubeId: targetYtId || undefined,
-            matchedTitle: targetTrack.matchedTitle,
-            matchScore: targetTrack.matchScore,
-          });
-          setCleanAudioOverrides((prev) => ({
-            ...prev,
-            [targetTrack.id]: {
-              url: result.streamUrl,
-              engine: "html5",
-              preservesYouTubeTimeline: result.preservesYouTubeTimeline,
-            },
-          }));
-          setPlaybackError(null);
-        } else {
-          activateIframeFallbackOrFail();
-        }
-      })
-      .catch(() => {
-        activateIframeFallbackOrFail();
-      })
-      .finally(() => {
-        clearTimeout(timeout);
-        iosAudioInFlightRef.current.delete(targetTrack.id);
-      });
+    return () => clearTimeout(timer);
   }, [
     isIOS,
     currentTrack,
-    cleanAudioOverrides,
-    iosYtFallbackIds,
+    activeEngine,
+    isPlaying,
+    html5StreamUrl,
     youtubeVideoId,
-    fetchDirectAudioStreamForTrack,
-    setIsLoading,
-    setIsPlaying,
     setPlaybackError,
-    queue.length,
-    playNext,
   ]);
 
   // SOUNDCLOUD STREAM RESOLUTION (Desktop / Android): extract ad-free progressive MP3, upgrade 30s Go+ SNIPPET
@@ -920,6 +907,9 @@ export function AudioEngineManager() {
 
   // Immediately reinforce navigator.mediaSession inside the native `<audio>` `playing` event for iOS Control Center & Lock Screen
   const handleHtml5Playing = useCallback(() => {
+    if (currentTrack) {
+      iosProxyPlayingIdRef.current = currentTrack.id;
+    }
     syncMediaSessionOnPlaying(currentTrack, {
       onPlay: handleMediaPlay,
       onPause: handleMediaPause,
@@ -1012,7 +1002,27 @@ export function AudioEngineManager() {
       resolvedNext: typeof nextTrack,
       nextYtId: string | null
     ) => {
-      if (!isIOS && !audioOnlyMode && !isMobileDevice) {
+      if (isIOS) {
+        // Pre-warm `/api/audio-proxy` RAM cache via lightweight HEAD so locked-screen `onEnded` transitions in 0ms!
+        const proxyUrl = buildAudioProxyUrl(resolvedNext, nextYtId);
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 4000);
+        fetch(proxyUrl, {
+          method: "HEAD",
+          headers: getByokHeaders(),
+          signal: controller.signal,
+        })
+          .then((res) => {
+            if (preloadId === preloadRequestIdRef.current && (res.ok || res.status === 206)) {
+              preloadedTrackRef.current = { id: resolvedNext.id, ready: true };
+            }
+          })
+          .catch(() => {})
+          .finally(() => clearTimeout(t));
+        return;
+      }
+
+      if (!audioOnlyMode && !isMobileDevice) {
         preloadedTrackRef.current = { id: resolvedNext.id, ready: true };
         return;
       }
@@ -1358,15 +1368,26 @@ export function AudioEngineManager() {
     [setIsLoading, setIsPlaying]
   );
 
-  // Background-safe `onEnded`: on iOS, immediately assign `audio.src = nextTrackAudioUrl` & `audio.play()`
-  // synchronously BEFORE React state commits so iOS NEVER revokes the locked-screen Audio Session!
+  // Background-safe `onEnded`: on iOS, immediately assign `audio.src = nextTrackProxyUrl` & `audio.play()`
+  // synchronously BEFORE React state commits (NEVER calling `removeAttribute('src')`)
+  // so the next song plays seamlessly even when iPhone is locked!
   const handleEnded = useCallback(() => {
     if (isIOS && upcomingTrack && repeatMode !== "one") {
+      const nextYtId =
+        upcomingTrack.source === "youtube"
+          ? extractYouTubeId(upcomingTrack.sourceUrl)
+          : upcomingTrack.resolvedSource === "youtube" && upcomingTrack.streamUrl
+          ? extractYouTubeId(upcomingTrack.streamUrl)
+          : getCachedStream(upcomingTrack.id)?.youtubeId || null;
+
       const preloadedNextUrl =
         cleanAudioOverrides[upcomingTrack.id]?.url ||
-        getCachedDirectAudioUrl(upcomingTrack.id) ||
         (isDirectAudioUrl(upcomingTrack.streamUrl)
           ? upcomingTrack.streamUrl!
+          : nextYtId ||
+            upcomingTrack.source === "soundcloud" ||
+            upcomingTrack.resolvedSource === "soundcloud"
+          ? buildAudioProxyUrl(upcomingTrack, nextYtId)
           : null);
 
       if (preloadedNextUrl) {
@@ -1375,6 +1396,15 @@ export function AudioEngineManager() {
     }
     playNext(true);
   }, [isIOS, upcomingTrack, repeatMode, cleanAudioOverrides, playNext]);
+
+  const handleYouTubeReady = useCallback(() => {
+    if (!currentTrack) return;
+    const pending = pendingIosResumeRef.current;
+    if (pending && pending.trackId === currentTrack.id && pending.seconds > 2) {
+      pendingIosResumeRef.current = null;
+      ytRef.current?.seekTo(pending.seconds);
+    }
+  }, [currentTrack]);
 
   const handleError = useCallback(
     (msg: string) => {
@@ -1391,9 +1421,16 @@ export function AudioEngineManager() {
   const handleHtml5Error = useCallback(() => {
     if (!currentTrack) return;
 
-    // On iOS, if a direct HTML5 audio stream fails/expires (e.g. 403/network), seamlessly fall back
-    // to YouTube IFrame Player with the matched youtubeId — NEVER show error or auto-skip!
+    // On iOS, if `/api/audio-proxy` returns HTTP >= 400 or stops mid-stream, seamlessly fall back
+    // to YouTube IFrame Player preserving current progress — NEVER show error or auto-skip!
     if (isIOS) {
+      const currentPos = usePlaybackTimeStore.getState().progress;
+      if (Number.isFinite(currentPos) && currentPos > 2) {
+        pendingIosResumeRef.current = {
+          trackId: currentTrack.id,
+          seconds: currentPos,
+        };
+      }
       clearCachedDirectAudioUrl(currentTrack.id);
       setCleanAudioOverrides((prev) => {
         if (!prev[currentTrack.id]) return prev;
@@ -1470,6 +1507,7 @@ export function AudioEngineManager() {
         active={activeEngine === "youtube"}
         isPlaying={activeEngine === "youtube" && isPlaying}
         volume={outputVolume}
+        onReady={handleYouTubeReady}
         onProgress={handleProgress}
         onDuration={setDuration}
         onStateChange={handleStateChange}
