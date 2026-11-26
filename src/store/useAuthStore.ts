@@ -18,6 +18,11 @@ import { usePlayerStore } from "./usePlayerStore";
 import { useSettingsStore } from "./useSettingsStore";
 import { usePlaylistStore, type UserPlaylist } from "./usePlaylistStore";
 import { useArtistStore, type FollowedArtist } from "./useArtistStore";
+import {
+  sanitizeFollowedArtists,
+  sanitizePlaylists,
+  sanitizeTracks,
+} from "@/lib/audio/sanitize";
 
 export type SyncStatus = "idle" | "syncing" | "synced" | "error";
 
@@ -128,13 +133,19 @@ export const useAuthStore = create<AuthState>()(
 
           if (data.synced) {
             if (Array.isArray(data.playlists)) {
-              usePlaylistStore.setState({ playlists: data.playlists });
+              usePlaylistStore.setState({
+                playlists: sanitizePlaylists(data.playlists),
+              });
             }
             if (Array.isArray(data.likedTracks)) {
-              usePlayerStore.setState({ likedTracks: data.likedTracks });
+              usePlayerStore.setState({
+                likedTracks: sanitizeTracks(data.likedTracks),
+              });
             }
             if (Array.isArray(data.followedArtists)) {
-              useArtistStore.setState({ followedArtists: data.followedArtists });
+              useArtistStore.setState({
+                followedArtists: sanitizeFollowedArtists(data.followedArtists),
+              });
             }
             if (data.profile?.region) {
               applySyncedRegion(data.profile.region);
@@ -187,13 +198,19 @@ export const useAuthStore = create<AuthState>()(
 
           if (data.synced) {
             if (Array.isArray(data.playlists)) {
-              usePlaylistStore.setState({ playlists: data.playlists });
+              usePlaylistStore.setState({
+                playlists: sanitizePlaylists(data.playlists),
+              });
             }
             if (Array.isArray(data.likedTracks)) {
-              usePlayerStore.setState({ likedTracks: data.likedTracks });
+              usePlayerStore.setState({
+                likedTracks: sanitizeTracks(data.likedTracks),
+              });
             }
             if (Array.isArray(data.followedArtists)) {
-              useArtistStore.setState({ followedArtists: data.followedArtists });
+              useArtistStore.setState({
+                followedArtists: sanitizeFollowedArtists(data.followedArtists),
+              });
             }
             if (data.region) {
               applySyncedRegion(data.region);

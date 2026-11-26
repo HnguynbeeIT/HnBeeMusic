@@ -41,11 +41,20 @@ export function CloudSyncManager() {
 
     if (isHydrating) return;
 
+    const safePlaylists = Array.isArray(playlists) ? playlists : [];
+    const safeLiked = Array.isArray(likedTracks) ? likedTracks : [];
+    const safeArtists = Array.isArray(followedArtists) ? followedArtists : [];
+
     const digest = JSON.stringify({
       r: region,
-      p: playlists.map((pl) => `${pl.id}:${pl.name}:${pl.updatedAt}:${pl.tracks.length}`),
-      l: likedTracks.map((t) => t.id),
-      a: followedArtists.map((a) => a.id),
+      p: safePlaylists.map(
+        (pl) =>
+          `${pl?.id || ""}:${pl?.name || ""}:${pl?.updatedAt || ""}:${
+            Array.isArray(pl?.tracks) ? pl.tracks.length : 0
+          }`
+      ),
+      l: safeLiked.map((t) => t?.id || ""),
+      a: safeArtists.map((a) => a?.id || ""),
     });
 
     // Skip the very first snapshot right after hydration/login to avoid redundant POST
