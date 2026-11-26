@@ -578,18 +578,7 @@ export async function GET(request: NextRequest) {
       )
     );
 
-    let winner: AudioStreamResult;
-    try {
-      winner = await Promise.any(racers);
-    } catch (raceErr) {
-      // Tier B Safety Net: if all 3 full-length sources missed (e.g. rare YouTube-only track),
-      // serve InnerTube iOS proxied stream so playback still starts instead of silence.
-      if (hasValidVideoId) {
-        winner = await extractFromInnerTubeIOS(videoId, false);
-      } else {
-        throw raceErr;
-      }
-    }
+    const winner = await Promise.any(racers);
 
     return NextResponse.json(
       {

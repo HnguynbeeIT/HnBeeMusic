@@ -114,10 +114,13 @@ export const YouTubeAdapter = forwardRef<EngineHandle, YouTubeAdapterProps>(
         } catch {}
       },
       stopAndReset: () => {
+        clearStallTimer();
         try {
           playerRef.current?.pauseVideo();
+          playerRef.current?.stopVideo?.();
           playerRef.current?.seekTo(0, true);
         } catch {}
+        loadedIdRef.current = null;
       },
       seekTo: (seconds: number) => {
         try {
