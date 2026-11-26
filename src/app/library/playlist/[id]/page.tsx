@@ -36,7 +36,7 @@ export default function PlaylistDetailPage() {
   }, []);
 
   const isHydrating = useAuthStore((s) => s.isHydrating);
-  const playPlaylist = usePlayerStore((s) => s.playPlaylist);
+  const playTrack = usePlayerStore((s) => s.playTrack);
   const playlists = usePlaylistStore((s) => s.playlists);
   const updatePlaylist = usePlaylistStore((s) => s.updatePlaylist);
   const deletePlaylist = usePlaylistStore((s) => s.deletePlaylist);
@@ -108,13 +108,13 @@ export default function PlaylistDetailPage() {
 
   const handlePlayAll = () => {
     if (tracks.length === 0) return;
-    playPlaylist(tracks, 0);
+    playTrack(tracks[0], tracks);
   };
 
   const handleShufflePlay = () => {
     if (tracks.length === 0) return;
     const shuffled = [...tracks].sort(() => Math.random() - 0.5);
-    playPlaylist(shuffled, 0);
+    playTrack(shuffled[0], shuffled);
   };
 
   const handleStartEdit = () => {

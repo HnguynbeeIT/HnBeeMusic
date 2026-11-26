@@ -3,6 +3,11 @@ import {
   resolveSoundCloudStream,
   searchSoundCloud,
 } from "@/lib/adapters/soundcloud";
+import {
+  cleanSearchTitle,
+  extractPrimaryArtist,
+  scoreCandidate,
+} from "@/lib/audio/strict-match";
 
 export const maxDuration = 20;
 
@@ -24,23 +29,6 @@ const INVIDIOUS_INSTANCES = [
   "https://invidious.nerdvpn.de",
 ];
 
-const NOISE_KEYWORDS = [
-  "remix",
-  "cover",
-  "karaoke",
-  "beat",
-  "instrumental",
-  "sped up",
-  "slowed",
-  "nightcore",
-  "live",
-  "reaction",
-  "8d",
-  "mashup",
-  "nonstop",
-  "playlist",
-];
-
 interface AudioStreamResult {
   streamUrl: string;
   rawUrl: string;
@@ -57,70 +45,6 @@ function createTimeoutSignal(ms = RACE_TIMEOUT_MS): AbortSignal {
   const controller = new AbortController();
   setTimeout(() => controller.abort(), ms);
   return controller.signal;
-}
-
-function normalizeText(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(
-      /\(official.*?\)|\[official.*?\]|official music video|official mv|official audio|audio video|lyric video|lyrics/gi,
-      " "
-    )
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isStrictTrackMatch(
-  candidateTitle: string,
-  candidateArtist: string,
-  candidateDuration: number,
-  expectedTitle: string,
-  expectedArtist: string,
-  expectedDuration: number
-): boolean {
-  const origLower = expectedTitle.toLowerCase();
-  const candLower = candidateTitle.toLowerCase();
-
-  for (const kw of NOISE_KEYWORDS) {
-    if (candLower.includes(kw) && !origLower.includes(kw)) {
-      return false;
-    }
-  }
-
-  if (expectedDuration > 0 && candidateDuration > 0) {
-    if (Math.abs(candidateDuration - expectedDuration) > 25) {
-      return false;
-    }
-  }
-
-  const origTokens = normalizeText(expectedTitle)
-    .split(" ")
-    .filter((w) => w.length >= 2);
-  if (origTokens.length > 0) {
-    const candNorm = normalizeText(`${candidateTitle} ${candidateArtist}`);
-    const matched = origTokens.filter((t) => candNorm.includes(t)).length;
-    if (matched / origTokens.length < 0.5) {
-      return false;
-    }
-  }
-
-  // If expectedArtist is known, check at least one artist token appears when title is short
-  if (origTokens.length <= 2 && expectedArtist) {
-    const artistTokens = normalizeText(expectedArtist)
-      .split(" ")
-      .filter((w) => w.length >= 2);
-    if (artistTokens.length > 0) {
-      const candAll = normalizeText(`${candidateTitle} ${candidateArtist}`);
-      const hasArtist = artistTokens.some((t) => candAll.includes(t));
-      if (!hasArtist) return false;
-    }
-  }
-
-  return true;
 }
 
 function wrapWithProxy(rawUrl: string): string {
@@ -383,13 +307,8 @@ async function extractFromSoundCloud(
 
   if (!title) throw new Error("soundcloud requires title or scUrl");
 
-  const cleanTitle = title
-    .replace(
-      /\(official.*?\)|\[official.*?\]|\(audiophile.*?\)|\(original mix\)|official music video|official mv|official audio|lyrics/gi,
-      ""
-    )
-    .trim();
-  const primaryArtist = artist.split(/[,&·]|feat\.|ft\./i)[0]?.trim() || "";
+  const cleanTitle = cleanSearchTitle(title);
+  const primaryArtist = extractPrimaryArtist(artist);
   const queryFull = `${cleanTitle} ${artist}`.trim();
   const queryPrimary = `${cleanTitle} ${primaryArtist}`.trim();
 
@@ -410,24 +329,26 @@ async function extractFromSoundCloud(
       return true;
     });
 
-  const verified = candidates.filter(
-    (c) =>
-      !c.isSnippet &&
-      (c.duration === 0 || c.duration > 45) &&
-      isStrictTrackMatch(
-        c.title,
-        c.artist,
-        c.duration,
-        cleanTitle || title,
-        artist,
-        expectedDuration
-      )
-  );
+  // Strict Title & Artist scoring — NEVER match unrelated tracks! Only accept score > 0.
+  const scoredCandidates = candidates
+    .filter((c) => !c.isSnippet && (c.duration === 0 || c.duration > 45))
+    .map((c) => ({
+      track: c,
+      score: scoreCandidate(
+        { title: c.title, artist: c.artist, duration: c.duration },
+        { title, artist, duration: expectedDuration }
+      ),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
 
-  for (const cand of verified.slice(0, 2)) {
+  for (const { track: cand, score } of scoredCandidates.slice(0, 2)) {
     const resolved = await resolveSoundCloudStream(cand.sourceUrl, scClientId);
     if (resolved.isSnippet) continue;
     if (resolved.streamUrl && resolved.streamType !== "widget") {
+      console.log(
+        `[StreamMatch] AudioStream(SC): "${title} - ${artist}" -> Matched: "${cand.title}" (ID: ${cand.id}, Score: ${score})`
+      );
       return {
         streamUrl: resolved.streamUrl,
         rawUrl: resolved.streamUrl,
@@ -478,21 +399,28 @@ async function extractFromSecondaryFallback(
             user?: { name?: string };
           }>;
         };
-        const match = (data.data ?? []).find(
-          (t) =>
-            Boolean(t.id) &&
-            (t.duration || 0) > 45 &&
-            isStrictTrackMatch(
-              t.title || "",
-              t.user?.name || "",
-              t.duration || 0,
-              title,
-              artist,
-              expectedDuration
-            )
+        const scoredAudius = (data.data ?? [])
+          .filter((t) => Boolean(t.id) && (t.duration || 0) > 45)
+          .map((t) => ({
+            item: t,
+            score: scoreCandidate(
+              {
+                title: t.title || "",
+                artist: t.user?.name || "",
+                duration: t.duration || 0,
+              },
+              { title, artist, duration: expectedDuration }
+            ),
+          }))
+          .filter((entry) => entry.score > 0)
+          .sort((a, b) => b.score - a.score);
+
+        const bestAudius = scoredAudius[0];
+        if (!bestAudius?.item?.id) throw new Error("audius no verified match");
+        console.log(
+          `[StreamMatch] AudioStream(Audius): "${title} - ${artist}" -> Matched: "${bestAudius.item.title}" (ID: audius:${bestAudius.item.id}, Score: ${bestAudius.score})`
         );
-        if (!match?.id) throw new Error("audius no verified match");
-        const directUrl = `https://discoveryprovider.audius.co/v1/tracks/${match.id}/stream?app_name=HnBeeMusic`;
+        const directUrl = `https://discoveryprovider.audius.co/v1/tracks/${bestAudius.item.id}/stream?app_name=HnBeeMusic`;
         return {
           streamUrl: directUrl,
           rawUrl: directUrl,

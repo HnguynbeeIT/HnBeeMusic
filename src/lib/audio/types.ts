@@ -23,6 +23,11 @@ export interface UnifiedTrack {
    * True when a SoundCloud Go+ track is restricted to a 30s snippet preview.
    */
   isSnippet?: boolean;
+  /**
+   * Matched video/audio title & strict score from Spotify Lazy Matching (for verification & debug logs).
+   */
+  matchedTitle?: string;
+  matchScore?: number;
 }
 
 export interface ArtistSearchItem {
