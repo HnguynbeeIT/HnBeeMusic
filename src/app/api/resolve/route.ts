@@ -24,7 +24,7 @@ const cachedLazyMatch = unstable_cache(
     duration: number,
     sourceUrl: string
   ): Promise<UnifiedTrack> => {
-    return matchSpotifyTrackToAudio({
+    const matched = await matchSpotifyTrackToAudio({
       id,
       title,
       artist,
@@ -33,8 +33,13 @@ const cachedLazyMatch = unstable_cache(
       source: "spotify",
       sourceUrl,
     });
+    // Throw on miss so Next.js unstable_cache NEVER caches a failed match for 1 hour!
+    if (!matched.streamUrl || !matched.resolvedSource) {
+      throw new Error("SPOTIFY_MATCH_MISS");
+    }
+    return matched;
   },
-  ["hnbee-spotify-lazy-match"],
+  ["hnbee-spotify-lazy-match-v2"],
   { revalidate: 3600 }
 );
 
@@ -76,9 +81,12 @@ export async function POST(request: NextRequest) {
         );
         return NextResponse.json({ track: matched });
       }
-      const matched = ytHeader
-        ? await matchSpotifyTrackToAudio(t, byokCredentials)
-        : await cachedLazyMatch(
+      let matched: UnifiedTrack = t;
+      if (ytHeader) {
+        matched = await matchSpotifyTrackToAudio(t, byokCredentials);
+      } else {
+        try {
+          matched = await cachedLazyMatch(
             t.id,
             t.title,
             t.artist,
@@ -86,6 +94,10 @@ export async function POST(request: NextRequest) {
             t.duration,
             t.sourceUrl
           );
+        } catch {
+          matched = t;
+        }
+      }
       return NextResponse.json({ track: matched });
     }
 
