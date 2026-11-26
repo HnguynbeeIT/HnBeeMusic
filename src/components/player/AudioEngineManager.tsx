@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { getByokHeaders, useSettingsStore } from "@/store/useSettingsStore";
 import { extractYouTubeId } from "@/lib/audio/url-parser";
+import { useMediaSession } from "@/hooks/useMediaSession";
 import {
   fetchSponsorSegments,
   findActiveSponsorSegment,
@@ -41,6 +42,8 @@ export function AudioEngineManager() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
+  const progress = usePlayerStore((s) => s.progress);
+  const duration = usePlayerStore((s) => s.duration);
   const seekTarget = usePlayerStore((s) => s.seekTarget);
 
   const setProgress = usePlayerStore((s) => s.setProgress);
@@ -56,6 +59,44 @@ export function AudioEngineManager() {
   const updateTrackInStore = usePlayerStore((s) => s.updateTrackInStore);
 
   const autoSkipSponsor = useSettingsStore((s) => s.autoSkipSponsor);
+  const audioOnlyMode = useSettingsStore((s) => s.audioOnlyMode);
+
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const keepAliveCtxRef = useRef<AudioContext | null>(null);
+
+  // SSR-safe mobile detection
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    setIsMobileDevice(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+  }, []);
+
+  // Lightweight Silent AudioContext keep-alive during track transitions so iOS/Android never revoke background playback
+  useEffect(() => {
+    if (typeof window === "undefined" || !isPlaying || !currentTrack) return;
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!keepAliveCtxRef.current) {
+        keepAliveCtxRef.current = new AudioCtx();
+      }
+      const ctx = keepAliveCtxRef.current;
+      if (ctx.state === "suspended") {
+        void ctx.resume().catch(() => {});
+      }
+      // Schedule a 200ms silent buffer pulse on track start/switch to retain audio session focus
+      const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.2)), ctx.sampleRate);
+      const source = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.buffer = buffer;
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      source.start(0);
+    } catch {}
+  }, [currentTrack?.id, isPlaying]);
 
   const ytRef = useRef<EngineHandle | null>(null);
   const html5Ref = useRef<EngineHandle | null>(null);
@@ -451,49 +492,92 @@ export function AudioEngineManager() {
     clearSeekTarget();
   }, [seekTarget, activeEngine, clearSeekTarget]);
 
-  // MEDIA SESSION API synchronization (hardware media keys & lock screen)
+  // MEDIA SESSION API (Lock Screen iOS/Android, Dynamic Island, Desktop Media Keys)
+  const handleMediaPlay = useCallback(() => setIsPlaying(true), [setIsPlaying]);
+  const handleMediaPause = useCallback(() => setIsPlaying(false), [setIsPlaying]);
+  const handleMediaNext = useCallback(() => playNext(false), [playNext]);
+
+  useMediaSession({
+    currentTrack,
+    isPlaying,
+    progress,
+    duration,
+    onPlay: handleMediaPlay,
+    onPause: handleMediaPause,
+    onPrev: playPrev,
+    onNext: handleMediaNext,
+    onSeekTo: seekTo,
+  });
+
+  // AUDIO-FIRST / BACKGROUND BYPASS (Mobile iOS/Android, Audio Only Mode, or tab hidden)
   useEffect(() => {
-    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+    if (!currentTrack || !youtubeVideoId) return;
+    if (cleanAudioOverrides[currentTrack.id]) return;
+
+    const triggerAudioFirst = () => {
+      if (ytFallbackAttemptedRef.current.has(currentTrack.id)) return;
+      ytFallbackAttemptedRef.current.add(currentTrack.id);
+      const trackId = currentTrack.id;
+      const params = new URLSearchParams({
+        v: youtubeVideoId,
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+      });
+      fetch(`/api/stream/youtube?${params.toString()}`, {
+        headers: getByokHeaders(),
+      })
+        .then((res) => res.json())
+        .then(
+          (data: {
+            streamUrl?: string | null;
+            streamType?:
+              | "direct-audio"
+              | "soundcloud-audio"
+              | "soundcloud-widget"
+              | "none";
+          }) => {
+            if (data.streamUrl) {
+              setCleanAudioOverrides((prev) => ({
+                ...prev,
+                [trackId]: {
+                  url: data.streamUrl!,
+                  engine:
+                    data.streamType === "soundcloud-widget"
+                      ? "soundcloud-widget"
+                      : "html5",
+                  preservesYouTubeTimeline: data.streamType === "direct-audio",
+                },
+              }));
+            }
+          }
+        )
+        .catch(() => {});
+    };
+
+    // Proactively use pure HTML5 <audio> on mobile or when Audio Only Mode is enabled
+    if (audioOnlyMode || isMobileDevice) {
+      triggerAudioFirst();
       return;
     }
 
-    if (currentTrack) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.title,
-        artist: currentTrack.artist,
-        album: `HnBee Music · ${currentTrack.source.toUpperCase()}`,
-        artwork: currentTrack.thumbnail
-          ? [
-              {
-                src: currentTrack.thumbnail,
-                sizes: "512x512",
-                type: "image/jpeg",
-              },
-            ]
-          : [],
-      });
-    }
-
-    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-
-    try {
-      navigator.mediaSession.setActionHandler("play", () => setIsPlaying(true));
-      navigator.mediaSession.setActionHandler("pause", () =>
-        setIsPlaying(false)
-      );
-      navigator.mediaSession.setActionHandler("previoustrack", () =>
-        playPrev()
-      );
-      navigator.mediaSession.setActionHandler("nexttrack", () =>
-        playNext(false)
-      );
-      navigator.mediaSession.setActionHandler("seekto", (details) => {
-        if (typeof details.seekTime === "number") {
-          seekTo(details.seekTime);
-        }
-      });
-    } catch {}
-  }, [currentTrack, isPlaying, playNext, playPrev, seekTo, setIsPlaying]);
+    // On desktop, also upgrade to HTML5 <audio> if the tab goes into background while playing
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && isPlaying) {
+        triggerAudioFirst();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    audioOnlyMode,
+    cleanAudioOverrides,
+    currentTrack,
+    isMobileDevice,
+    isPlaying,
+    youtubeVideoId,
+  ]);
 
   // Progress handler with integrated SponsorBlock auto-skip
   const handleProgress = useCallback(

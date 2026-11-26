@@ -51,6 +51,7 @@ export function TrackRow({ track, index, contextQueue }: TrackRowProps) {
   const playlists = usePlaylistStore((s) => s.playlists);
   const createPlaylist = usePlaylistStore((s) => s.createPlaylist);
   const addTrackToPlaylist = usePlaylistStore((s) => s.addTrackToPlaylist);
+  const openCreateModal = usePlaylistStore((s) => s.openCreateModal);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [newPlName, setNewPlName] = useState("");
@@ -230,6 +231,18 @@ export function TrackRow({ track, index, contextQueue }: TrackRowProps) {
                 })}
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                openCreateModal(track);
+              }}
+              className="mb-2 flex w-full items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-left text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
+            >
+              <Plus className="h-3.5 w-3.5 shrink-0" />
+              Tạo playlist mới với bài này
+            </button>
 
             <form
               onSubmit={handleQuickCreateAndAdd}

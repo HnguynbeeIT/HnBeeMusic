@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle,
+  Check,
+  FolderPlus,
+  Headphones,
   Heart,
   ListMusic,
   Loader2,
@@ -10,6 +14,7 @@ import {
   MicVocal,
   Pause,
   Play,
+  Plus,
   Repeat,
   Repeat1,
   Shuffle,
@@ -21,6 +26,8 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useLyricsStore } from "@/store/useLyricsStore";
+import { usePlaylistStore } from "@/store/usePlaylistStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import {
   BUTTON_MOTION,
   SPRING_PHYSICS,
@@ -61,8 +68,27 @@ export function BottomPlayerBar() {
   const toggleLyricsOpen = usePlayerStore((s) => s.toggleLyricsOpen);
   const setFullPlayerOpen = usePlayerStore((s) => s.setFullPlayerOpen);
   const toggleLikeTrack = usePlayerStore((s) => s.toggleLikeTrack);
+  const setPlaybackNotice = usePlayerStore((s) => s.setPlaybackNotice);
   const hasLyrics = useLyricsStore((s) => s.hasLyrics);
   const isFullScreenLyrics = useLyricsStore((s) => s.isFullScreenLyrics);
+  const playlists = usePlaylistStore((s) => s.playlists);
+  const addTrackToPlaylist = usePlaylistStore((s) => s.addTrackToPlaylist);
+  const openCreateModal = usePlaylistStore((s) => s.openCreateModal);
+  const audioOnlyMode = useSettingsStore((s) => s.audioOnlyMode);
+  const toggleAudioOnlyMode = useSettingsStore((s) => s.toggleAudioOnlyMode);
+
+  const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
+
+  const handleToggleAudioOnly = () => {
+    const next = !audioOnlyMode;
+    toggleAudioOnlyMode();
+    setPlaybackNotice(
+      next
+        ? "Đã bật chế độ Audio Only / Phát nền (Tiết kiệm pin & phát khi khóa màn hình)"
+        : "Đã tắt chế độ Audio Only"
+    );
+    setTimeout(() => setPlaybackNotice(null), 3200);
+  };
 
   const isLiked = currentTrack
     ? likedTracks.some((t) => t.id === currentTrack.id)
@@ -247,6 +273,74 @@ export function BottomPlayerBar() {
               >
                 <Heart className={`h-4 w-4 ${isLiked ? "fill-current" : ""}`} />
               </motion.button>
+
+              {/* Quick Add Current Track to Playlist */}
+              <div className="relative">
+                <motion.button
+                  type="button"
+                  {...BUTTON_MOTION}
+                  onClick={() => setPlaylistMenuOpen((v) => !v)}
+                  aria-label="Thêm vào Playlist"
+                  title="Thêm vào Playlist"
+                  className={`rounded-lg p-2 transition-colors ${
+                    playlistMenuOpen
+                      ? "bg-white/15 text-white"
+                      : "text-zinc-500 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <FolderPlus className="h-4 w-4" />
+                </motion.button>
+
+                {playlistMenuOpen && (
+                  <div className="absolute bottom-12 left-0 z-50 w-56 rounded-2xl border border-white/15 bg-zinc-900/95 p-2.5 shadow-2xl backdrop-blur-xl">
+                    <p className="mb-2 px-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                      Thêm vào Playlist
+                    </p>
+                    {playlists.length > 0 && (
+                      <div className="mb-2 max-h-36 space-y-1 overflow-y-auto">
+                        {playlists.map((pl) => {
+                          const alreadyIn = pl.tracks.some(
+                            (t) => t.id === currentTrack.id
+                          );
+                          return (
+                            <button
+                              key={pl.id}
+                              type="button"
+                              onClick={() => {
+                                addTrackToPlaylist(pl.id, currentTrack);
+                                setPlaylistMenuOpen(false);
+                                setPlaybackNotice(
+                                  alreadyIn
+                                    ? `Bài hát đã có trong "${pl.name}"`
+                                    : `Đã thêm vào "${pl.name}"`
+                                );
+                                setTimeout(() => setPlaybackNotice(null), 2600);
+                              }}
+                              className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-zinc-200 hover:bg-white/10"
+                            >
+                              <span className="truncate">{pl.name}</span>
+                              {alreadyIn && (
+                                <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlaylistMenuOpen(false);
+                        openCreateModal(currentTrack);
+                      }}
+                      className="flex w-full items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-left text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
+                    >
+                      <Plus className="h-3.5 w-3.5 shrink-0" />
+                      Tạo playlist mới với bài này
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <div className="flex items-center gap-3 text-zinc-500">
@@ -355,8 +449,29 @@ export function BottomPlayerBar() {
           </div>
         </div>
 
-        {/* Col 3: Queue Drawer, Lyrics Panel, Volume Slider, Expand */}
+        {/* Col 3: Audio Only Mode, Lyrics Panel, Queue Drawer, Volume Slider, Expand */}
         <div className="flex items-center justify-end gap-2.5 pl-4">
+          <motion.button
+            type="button"
+            {...BUTTON_MOTION}
+            onClick={handleToggleAudioOnly}
+            aria-label="Chế độ Audio Only / Phát nền"
+            title={
+              audioOnlyMode
+                ? "Audio Only / Phát nền: ĐANG BẬT (Tiết kiệm pin & phát khi khóa màn hình)"
+                : "Bật chế độ Audio Only / Phát nền"
+            }
+            className={`relative rounded-lg p-2 transition-colors ${
+              audioOnlyMode
+                ? "bg-emerald-500/15 text-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.25)]"
+                : "text-zinc-400 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <Headphones className="h-4 w-4" />
+            {audioOnlyMode && (
+              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+            )}
+          </motion.button>
           <motion.button
             type="button"
             {...BUTTON_MOTION}

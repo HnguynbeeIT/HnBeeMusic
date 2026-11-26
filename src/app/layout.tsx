@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { MotionProvider } from "@/components/layout/MotionProvider";
@@ -13,6 +13,7 @@ import { FullScreenPlayerModal } from "@/components/player/FullScreenPlayerModal
 import { ApiSettingsModal } from "@/components/settings/ApiSettingsModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { CloudSyncManager } from "@/components/auth/CloudSyncManager";
+import { CreatePlaylistModal } from "@/components/playlist/CreatePlaylistModal";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -30,6 +31,16 @@ export const metadata: Metadata = {
   title: "HnBee Music — Unified Multi-Source Streaming",
   description:
     "Open-source multi-source music streaming client for Spotify, YouTube, and SoundCloud.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "HnBee Music",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#09090b",
 };
 
 export default function RootLayout({
@@ -63,6 +74,7 @@ export default function RootLayout({
           <FullScreenPlayerModal />
           <ApiSettingsModal />
           <AuthModal />
+          <CreatePlaylistModal />
           <CloudSyncManager />
         </MotionProvider>
       </body>

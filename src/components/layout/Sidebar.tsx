@@ -65,6 +65,7 @@ export function Sidebar() {
   const initAuth = useAuthStore((s) => s.initAuth);
   const setAuthModalOpen = useAuthStore((s) => s.setAuthModalOpen);
   const userPlaylists = usePlaylistStore((s) => s.playlists);
+  const openCreateModal = usePlaylistStore((s) => s.openCreateModal);
   const followedArtists = useArtistStore((s) => s.followedArtists);
 
   useEffect(() => {
@@ -185,12 +186,13 @@ export function Sidebar() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
               Playlists
             </p>
-            <Link
-              href="/library"
-              className="text-[11px] text-zinc-400 hover:text-white"
+            <button
+              type="button"
+              onClick={() => openCreateModal()}
+              className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/10 hover:text-emerald-300"
             >
-              + Quản lý
-            </Link>
+              + Tạo mới
+            </button>
           </div>
           <div className="flex-1 space-y-1.5 overflow-y-auto pr-0.5">
             {followedArtists.length > 0 && (
@@ -218,35 +220,41 @@ export function Sidebar() {
             )}
 
             {userPlaylists.map((pl) => (
-              <button
+              <div
                 key={pl.id}
-                type="button"
-                onClick={() =>
-                  pl.tracks.length > 0
-                    ? playTrack(pl.tracks[0], pl.tracks)
-                    : router.push("/library")
-                }
                 className="group flex w-full items-center gap-2.5 rounded-xl p-1.5 text-left transition-colors hover:bg-white/5"
               >
-                <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    pl.tracks.length > 0
+                      ? playTrack(pl.tracks[0], pl.tracks)
+                      : router.push(`/library/playlist/${encodeURIComponent(pl.id)}`)
+                  }
+                  aria-label={`Phát ${pl.name}`}
+                  className="relative shrink-0"
+                >
                   <TrackThumbnail
-                    src={pl.tracks[0]?.thumbnail}
+                    src={pl.coverUrl || pl.tracks[0]?.thumbnail}
                     alt={pl.name}
                     className="h-10 w-10 rounded-lg"
                   />
                   <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
                     <Play className="h-3.5 w-3.5 translate-x-[1px] fill-white text-white" />
                   </div>
-                </div>
-                <div className="min-w-0 flex-1">
+                </button>
+                <Link
+                  href={`/library/playlist/${encodeURIComponent(pl.id)}`}
+                  className="min-w-0 flex-1"
+                >
                   <p className="truncate text-xs font-medium text-emerald-300 group-hover:text-emerald-200">
                     {pl.name}
                   </p>
                   <p className="truncate text-[11px] text-zinc-500">
                     {pl.tracks.length} bài · Cá nhân
                   </p>
-                </div>
-              </button>
+                </Link>
+              </div>
             ))}
 
             {CURATED_PLAYLISTS.map((pl) => (
