@@ -5,8 +5,8 @@ import { getSourceTheme } from "@/lib/ui/source-theme";
 
 /**
  * Dynamic Ambient Lighting behind main viewport:
- * blur-[120px] opacity-30 transition-all duration-1000
- * shifts automatically with the active track artwork & source palette.
+ * Uses HNG Obsidian Black (#0B0D12) base layered with HNM Neon Violet (#8B5CF6),
+ * HNT Electric Cyan (#00E5FF), and artwork-derived bloom.
  */
 export function AmbientGlow() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -15,7 +15,7 @@ export function AmbientGlow() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#09090b]"
+      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#0B0D12]"
     >
       {/* Artwork-derived ambient bloom */}
       {currentTrack?.thumbnail && (
@@ -25,16 +25,27 @@ export function AmbientGlow() {
         />
       )}
 
-      {/* Source-tinted radial ambient aura */}
+      {/* HNM Neon Violet & active source radial ambient aura */}
       <div
         className="absolute -top-32 right-1/4 h-[420px] w-[620px] rounded-full opacity-30 blur-[120px] transition-all duration-1000"
         style={{
-          background: `radial-gradient(circle, ${theme.ambientRadial} 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${
+            currentTrack ? theme.ambientRadial : "rgba(139, 92, 246, 0.45)"
+          } 0%, transparent 70%)`,
         }}
       />
 
-      {/* Deep obsidian vignette to keep album art & glass crisp */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#09090b]/25 via-[#09090b]/80 to-[#09090b]" />
+      {/* Subtle HNT Electric Cyan tech rim glow */}
+      <div
+        className="absolute -bottom-32 left-1/4 h-[340px] w-[520px] rounded-full opacity-15 blur-[130px]"
+        style={{
+          background:
+            "radial-gradient(circle, rgba(0, 229, 255, 0.4) 0%, transparent 70%)",
+        }}
+      />
+
+      {/* Deep Obsidian Black vignette to keep album art & glass crisp */}
+      <div className="absolute inset-0 bg-gradient-to-b from-[#0B0D12]/25 via-[#0B0D12]/80 to-[#0B0D12]" />
     </div>
   );
 }

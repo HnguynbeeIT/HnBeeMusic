@@ -1,13 +1,13 @@
 {
-  "name": "HnBee Music — HNT - HnBee Technologies (HNG)",
-  "short_name": "HnBee Music",
-  "description": "Multi-source audiophile music streaming for Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music & Audius — by HNT - HnBee Technologies, a division of Hyper Next Generation (HNG).",
+  "name": "HnBeeMusic — Powered by HNT & HNM (HNG)",
+  "short_name": "HnBeeMusic",
+  "description": "Unified multi-source audiophile music streaming for Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music & Audius — Powered by HNT (Hyper Next Technologies) & HNM (Hyper Next Media), thuộc HNG (Hyper Next Generation Group).",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "background_color": "#0B0D12",
+  "theme_color": "#0B0D12",
   "categories": ["music", "entertainment"],
   "icons": [
     {

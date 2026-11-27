@@ -49,16 +49,16 @@ export function ElectronTitleBar() {
   return (
     <div
       role="banner"
-      aria-label="HnBee Music Desktop Title Bar"
-      className="electron-drag fixed inset-x-0 top-0 z-[9990] flex h-9 select-none items-center justify-between border-b border-white/[0.06] bg-[#09090b]/95 px-3.5 pr-[144px] backdrop-blur-xl"
+      aria-label="HnBeeMusic Desktop Title Bar"
+      className="electron-drag fixed inset-x-0 top-0 z-[9990] flex h-9 select-none items-center justify-between border-b border-[#A8B2C1]/10 bg-[#0B0D12]/95 px-3.5 pr-[144px] backdrop-blur-xl"
     >
-      <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wide text-zinc-300">
-        <span className="flex h-4 w-4 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400">
+      <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wide text-[#F4F6FA]">
+        <span className="flex h-4 w-4 items-center justify-center rounded-md bg-[#8B5CF6]/20 text-[#00E5FF]">
           <Disc3 className="h-3 w-3" />
         </span>
-        <span>HnBee Music</span>
-        <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[9px] text-zinc-400">
-          Desktop
+        <span className="font-display">HnBeeMusic</span>
+        <span className="rounded-full border border-[#00E5FF]/25 bg-[#00E5FF]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#00E5FF]">
+          HNT &bull; HNM
         </span>
       </div>
     </div>

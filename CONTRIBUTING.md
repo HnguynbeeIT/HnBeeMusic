@@ -1,6 +1,6 @@
-# Contributing to HnBee Music
+# Contributing to HnBeeMusic
 
-> Dự án thuộc **HNT - HnBee Technologies** &bull; *A division of **Hyper Next Generation (HNG)***
+> **HnBeeMusic — Powered by HNT & HNM** *(HNT: Hyper Next Technologies • HNM: Hyper Next Media — thuộc **HNG: Hyper Next Generation Group**)* • Liên hệ kỹ thuật: `dev@hng.vn`
 
 Cảm ơn bạn đã quan tâm đóng góp cho **HnBee Music**! Dự án theo đuổi triết lý mã nguồn sạch, dễ mở rộng và tối ưu 60fps.
 

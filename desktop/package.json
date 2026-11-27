@@ -3,7 +3,7 @@
   "version": "2.5.1",
   "description": "HnBee Music Desktop App for Windows (Multi-Source Audiophile Streaming)",
   "main": "main.js",
-  "author": "Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies (Hyper Next Generation — HNG)",
+  "author": "Nguyễn Ngọc Hà Nguyên — HNG (Hyper Next Generation Group)",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -16,9 +16,9 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.hng.hnt.hnbeemusic",
+    "appId": "vn.hng.hnt.hnbeemusic",
     "productName": "HnBee Music",
-    "copyright": "Copyright © 2026 Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies | Hyper Next Generation (HNG)",
+    "copyright": "Copyright © 2026 Nguyễn Ngọc Hà Nguyên — HNG (Hyper Next Generation Group)",
     "asar": true,
     "compression": "maximum",
     "removePackageScripts": true,
@@ -45,7 +45,7 @@
     ],
     "win": {
       "icon": "assets/icon.png",
-      "publisherName": "HNT - HnBee Technologies (Hyper Next Generation)",
+      "publisherName": "HNT - Hyper Next Technologies (HNG)",
       "target": [
         {
           "target": "nsis",

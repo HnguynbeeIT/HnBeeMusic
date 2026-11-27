@@ -97,7 +97,7 @@ export function Sidebar() {
   return (
     <>
       {/* MOBILE TOP GLASS HEADER (Dynamic Island / Notch safe-area aware) */}
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-[#09090b]/85 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur-xl md:hidden">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#A8B2C1]/15 bg-[#0B0D12]/85 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur-xl md:hidden">
         <Link href="/" aria-label="HnBee Music Home">
           <BrandLogo variant="compact" />
         </Link>
@@ -410,8 +410,8 @@ export function Sidebar() {
               href="/download"
               className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
                 pathname === "/download"
-                  ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
-                  : "border-emerald-400/20 bg-emerald-500/[0.08] text-emerald-300 hover:bg-emerald-500/20"
+                  ? "border-[#00E5FF]/45 bg-[#00E5FF]/20 text-[#00E5FF]"
+                  : "border-[#00E5FF]/25 bg-[#00E5FF]/[0.08] text-[#00E5FF] hover:bg-[#00E5FF]/20"
               }`}
             >
               <Monitor className="h-3.5 w-3.5" />
@@ -421,10 +421,10 @@ export function Sidebar() {
           <button
             type="button"
             onClick={() => setAboutOpen(true)}
-            className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-[#A8B2C1]/10 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium text-[#A8B2C1] transition-colors hover:bg-white/10 hover:text-[#F4F6FA]"
           >
-            <Info className="h-3.5 w-3.5 text-emerald-400" />
-            Giới thiệu HnBee Music
+            <Info className="h-3.5 w-3.5 text-[#8B5CF6]" />
+            Giới thiệu HnBeeMusic
           </button>
           <BrandCredit className="mt-2 text-center" />
         </div>

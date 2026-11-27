@@ -146,9 +146,13 @@ Xem thêm hướng dẫn chi tiết tại [CONTRIBUTING.md](./CONTRIBUTING.md), 
 - **HnBee Music** là dự án mã nguồn mở phục vụ mục đích học tập, nghiên cứu kiến trúc phần mềm và trải nghiệm nghe nhạc cá nhân.
 - Ứng dụng không lưu trữ và không phân phối tệp âm thanh có bản quyền trên máy chủ riêng; mọi luồng phát và metadata đều được kết nối trực tiếp từ các nền tảng gốc theo yêu cầu của người dùng.
 
-## Tác Giả & Bản Quyền (Author & Organization)
+## Hệ Sinh Thái HNG, Tác Giả & Bản Quyền (HNG Ecosystem & License)
 
-- **Tác giả:** **Nguyễn Ngọc Hà Nguyên** — `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT))
-- **Đơn vị phát triển:** **HNT - HnBee Technologies** &bull; *A division of **Hyper Next Generation (HNG)***
-- **Portfolio:** [hanguynbeeit-portfolio.vercel.app](https://hanguynbeeit-portfolio.vercel.app)
-- **Giấy phép:** Phát hành dưới giấy phép **[MIT License](./LICENSE)** &copy; 2026 **Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies | Hyper Next Generation (HNG)**.
+**HnBeeMusic — Powered by HNT & HNM** là sản phẩm âm nhạc đa nền tảng đồng vận hành trong hệ sinh thái **HNG — Hyper Next Generation Group**:
+
+- **Tập đoàn chủ quản:** **HNG — Hyper Next Generation Group** ([`hng.vn`](https://hng.vn))
+- **Công nghệ & Hạ tầng (`HNT`):** **Hyper Next Technologies** ([`tech.hng.vn`](https://tech.hng.vn)) — Kiến trúc Streaming, Audio Proxy & Ứng dụng Windows Desktop
+- **Âm nhạc & Nội dung (`HNM`):** **Hyper Next Media** ([`media.hng.vn`](https://media.hng.vn)) — Trải nghiệm nghe nhạc & nội dung đa nền tảng ([`music.hng.vn`](https://music.hng.vn))
+- **Tác giả:** **Nguyễn Ngọc Hà Nguyên** — `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT)) &bull; [Portfolio](https://hanguynbeeit-portfolio.vercel.app)
+- **Hỗ trợ & Liên hệ kỹ thuật:** [`dev@hng.vn`](mailto:dev@hng.vn) &bull; [`support.hnt@hng.vn`](mailto:support.hnt@hng.vn)
+- **Giấy phép:** Phát hành dưới giấy phép **[MIT License](./LICENSE)** &copy; 2026 **Nguyễn Ngọc Hà Nguyên — HNG (Hyper Next Generation Group)**.

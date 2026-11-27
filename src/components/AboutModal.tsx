@@ -215,58 +215,61 @@ export function AboutModal() {
                 <Link
                   href="/download"
                   onClick={() => setAboutOpen(false)}
-                  className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4 transition-colors hover:bg-emerald-500/20"
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-[#00E5FF]/25 bg-[#00E5FF]/10 p-4 transition-colors hover:bg-[#00E5FF]/20"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#00E5FF]/15 text-[#00E5FF]">
                       <Monitor className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-white">
+                      <p className="font-display text-xs font-bold text-[#F4F6FA]">
                         Tải bản PC cho Windows (.exe)
                       </p>
-                      <p className="text-[11px] text-emerald-200/80">
+                      <p className="text-[11px] text-[#00E5FF]/80">
                         Chạy nền dưới khay hệ thống &amp; phím tắt bàn phím
                       </p>
                     </div>
                   </div>
-                  <span className="shrink-0 text-xs font-semibold text-emerald-300">
+                  <span className="shrink-0 text-xs font-semibold text-[#00E5FF]">
                     Mở →
                   </span>
                 </Link>
 
-                <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-zinc-200">
+                <div className="flex items-start gap-3 rounded-2xl border border-[#A8B2C1]/15 bg-white/[0.03] p-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#8B5CF6]/15 text-[#8B5CF6]">
                     <Smartphone className="h-4 w-4" />
                   </div>
-                  <p className="text-xs leading-relaxed text-zinc-300">
-                    <strong className="font-semibold text-white">
+                  <p className="text-xs leading-relaxed text-[#A8B2C1]">
+                    <strong className="font-semibold text-[#F4F6FA]">
                       Mẹo nhỏ:
                     </strong>{" "}
                     Chọn{" "}
-                    <strong className="text-emerald-300">
+                    <strong className="text-[#00E5FF]">
                       &lsquo;Thêm vào Màn hình chính&rsquo;
                     </strong>{" "}
-                    trên trình duyệt điện thoại để mở HnBee Music toàn màn hình
+                    trên trình duyệt điện thoại để mở HnBeeMusic toàn màn hình
                     như ứng dụng gốc.
                   </p>
                 </div>
               </section>
 
-              {/* Subtle Brand Footer */}
-              <footer className="space-y-1 border-t border-white/10 pt-4 text-center">
-                <p className="text-xs text-zinc-300">
-                  Phát triển bởi{" "}
-                  <span className="font-semibold text-white">
-                    HNT - HnBee Technologies
-                  </span>
+              {/* HNG Ecosystem Brand Footer */}
+              <footer className="space-y-1.5 border-t border-[#A8B2C1]/15 pt-4 text-center">
+                <p className="font-display text-xs font-semibold text-[#F4F6FA]">
+                  HnBeeMusic &mdash; Powered by{" "}
+                  <span className="text-[#00E5FF]">HNT</span> &amp;{" "}
+                  <span className="text-[#8B5CF6]">HNM</span>
                 </p>
-                <p className="text-[11px] text-zinc-400">
-                  A division of{" "}
-                  <span className="font-medium text-zinc-200">
-                    Hyper Next Generation (HNG)
-                  </span>{" "}
-                  &bull; Dành tặng cộng đồng yêu âm nhạc.
+                <p className="text-[11px] text-[#A8B2C1]">
+                  HNT (Hyper Next Technologies) &bull; HNM (Hyper Next Media)
+                  &mdash; thuộc{" "}
+                  <strong className="font-medium text-[#F4F6FA]">
+                    HNG (Hyper Next Generation Group)
+                  </strong>
+                </p>
+                <p className="text-[10px] text-[#A8B2C1]/75">
+                  music.hng.vn &bull; tech.hng.vn &bull; media.hng.vn &bull;
+                  support.hnt@hng.vn
                 </p>
               </footer>
             </div>

@@ -301,8 +301,8 @@ function createWindow() {
     height: winState.height,
     minWidth: 940,
     minHeight: 620,
-    title: "HnBee Music",
-    backgroundColor: "#09090b",
+    title: "HnBeeMusic",
+    backgroundColor: "#0B0D12",
     icon,
     autoHideMenuBar: true,
     show: false,
@@ -310,8 +310,8 @@ function createWindow() {
     ...(process.platform === "win32"
       ? {
           titleBarOverlay: {
-            color: "#09090b",
-            symbolColor: "#e4e4e7",
+            color: "#0B0D12",
+            symbolColor: "#F4F6FA",
             height: 36,
           },
         }
@@ -424,14 +424,14 @@ function createTray() {
     },
     { type: "separator" },
     {
-      label: "Giới thiệu HnBee Music",
+      label: "Giới thiệu HnBeeMusic",
       click: () => {
         dialog.showMessageBox(mainWindow || undefined, {
           type: "info",
-          title: "Giới thiệu HnBee Music",
-          message: "HnBee Music Desktop v2.5.1",
+          title: "Giới thiệu HnBeeMusic",
+          message: "HnBeeMusic Desktop v2.5.1 — Powered by HNT & HNM",
           detail:
-            "Đơn vị phát triển: HNT - HnBee Technologies\nTrực thuộc: Hyper Next Generation (HNG)\nTác giả: Nguyễn Ngọc Hà Nguyên\n\nCopyright © 2026 Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies | Hyper Next Generation (HNG)",
+            "Tập đoàn chủ quản: HNG — Hyper Next Generation Group (hng.vn)\nCông nghệ & Hạ tầng: HNT — Hyper Next Technologies (tech.hng.vn)\nÂm nhạc & Nội dung: HNM — Hyper Next Media (media.hng.vn)\nTác giả: Nguyễn Ngọc Hà Nguyên\nHỗ trợ kỹ thuật: support.hnt@hng.vn | dev@hng.vn\n\nCopyright © 2026 Nguyễn Ngọc Hà Nguyên — HNG (Hyper Next Generation Group)",
           buttons: ["Đóng"],
         });
       },
@@ -484,12 +484,12 @@ ipcMain.on("hnbee:open-oauth", (_event, provider) => {
 
 app.whenReady().then(() => {
   app.setAboutPanelOptions({
-    applicationName: "HnBee Music",
+    applicationName: "HnBeeMusic",
     applicationVersion: "2.5.1",
     copyright:
-      "Copyright © 2026 Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies | Hyper Next Generation (HNG)",
+      "Copyright © 2026 Nguyễn Ngọc Hà Nguyên — HNG (Hyper Next Generation Group)",
     credits:
-      "HNT - HnBee Technologies • A division of Hyper Next Generation (HNG)",
+      "HnBeeMusic — Powered by HNT (Hyper Next Technologies) & HNM (Hyper Next Media) • hng.vn",
   });
   createWindow();
   createTray();

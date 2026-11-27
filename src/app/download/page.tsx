@@ -60,37 +60,41 @@ export default function DownloadPage() {
       </Link>
 
       {/* HERO WINDOWS DESKTOP DOWNLOAD CARD */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/65 p-6 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:p-9">
+      <section className="relative overflow-hidden rounded-3xl border border-[#A8B2C1]/15 bg-[#0B0D12]/80 p-6 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:p-9">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-emerald-500/20 blur-[110px]"
+          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#00E5FF]/20 blur-[110px]"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-sky-500/15 blur-[100px]"
+          className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-[#8B5CF6]/20 blur-[100px]"
         />
 
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-xl space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#00E5FF]/35 bg-[#00E5FF]/10 px-3 py-1 text-xs font-semibold text-[#00E5FF]">
                 <Sparkles className="h-3.5 w-3.5" />
                 Phiên bản mới nhất v2.5.1
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-[11px] text-zinc-300">
-                <Monitor className="h-3.5 w-3.5 text-sky-400" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#A8B2C1]/20 bg-white/5 px-3 py-1 font-mono text-[11px] text-[#A8B2C1]">
+                <Monitor className="h-3.5 w-3.5 text-[#00E5FF]" />
                 Windows 10/11 64-bit &bull; 87.4 MB
               </span>
             </div>
 
             <div className="space-y-2">
-              <h1 className="bg-gradient-to-br from-white via-zinc-100 to-emerald-300 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent sm:text-4xl">
-                Tải HnBee Music cho Máy tính (.exe)
+              <h1 className="font-display bg-gradient-to-br from-[#F4F6FA] via-[#F4F6FA] to-[#00E5FF] bg-clip-text text-2xl font-extrabold tracking-tight text-transparent sm:text-4xl">
+                Tải HnBeeMusic cho Máy tính (.exe)
               </h1>
-              <p className="text-sm leading-relaxed text-zinc-300">
+              <p className="text-sm leading-relaxed text-[#A8B2C1]">
                 Trải nghiệm không gian nghe nhạc đa nguồn chuẩn Audiophile ngay
-                trên Windows — tối giản, đồng bộ Cloud tự động với điện thoại và
-                sẵn sàng chạy nền mượt mà suốt cả ngày.
+                trên Windows &mdash; vận hành bởi{" "}
+                <strong className="font-semibold text-[#00E5FF]">HNT</strong>{" "}
+                &amp;{" "}
+                <strong className="font-semibold text-[#8B5CF6]">HNM</strong>{" "}
+                thuộc hệ sinh thái{" "}
+                <strong className="font-semibold text-[#F4F6FA]">HNG</strong>.
               </p>
             </div>
 
@@ -100,10 +104,10 @@ export default function DownloadPage() {
                 target="_blank"
                 rel="noreferrer"
                 {...BUTTON_MOTION}
-                className="inline-flex min-h-[48px] items-center justify-center gap-2.5 rounded-full bg-white px-6 py-3 text-sm font-bold text-zinc-950 shadow-xl shadow-emerald-500/20 hover:bg-emerald-300"
+                className="inline-flex min-h-[48px] items-center justify-center gap-2.5 rounded-full bg-[#00E5FF] px-6 py-3 text-sm font-bold text-[#0B0D12] shadow-xl shadow-[#00E5FF]/25 hover:bg-[#F4F6FA]"
               >
                 <Download className="h-4 w-4" />
-                <span>Tải xuống HnBee Music cho Windows (.exe)</span>
+                <span>Tải xuống HnBeeMusic cho Windows (.exe)</span>
               </motion.a>
 
               <motion.a
@@ -303,21 +307,23 @@ export default function DownloadPage() {
         </div>
       </section>
 
-      {/* Organization & Publisher Footer */}
-      <footer className="rounded-2xl border border-white/10 bg-zinc-900/45 px-5 py-4 text-center backdrop-blur-xl">
-        <p className="text-xs font-semibold text-zinc-200">
-          HNT - HnBee Technologies{" "}
-          <span className="font-normal text-zinc-500">&bull;</span>{" "}
-          <span className="font-normal text-zinc-400">
-            A division of{" "}
-            <strong className="font-semibold text-zinc-200">
-              Hyper Next Generation (HNG)
-            </strong>
-          </span>
+      {/* HNG Ecosystem & Publisher Footer */}
+      <footer className="space-y-1.5 rounded-2xl border border-[#A8B2C1]/15 bg-[#0B0D12]/65 px-5 py-4 text-center backdrop-blur-xl">
+        <p className="font-display text-xs font-semibold text-[#F4F6FA]">
+          HnBeeMusic &mdash; Powered by{" "}
+          <span className="text-[#00E5FF]">HNT</span> &amp;{" "}
+          <span className="text-[#8B5CF6]">HNM</span>
         </p>
-        <p className="mt-1 text-[11px] text-zinc-500">
-          &copy; 2026 Nguyễn Ngọc Hà Nguyên &mdash; Nhà phát hành chính thức của
-          HnBee Music (Web, PWA &amp; Windows Desktop).
+        <p className="text-[11px] text-[#A8B2C1]">
+          HNT (Hyper Next Technologies) &bull; HNM (Hyper Next Media) &mdash;
+          thuộc{" "}
+          <strong className="font-semibold text-[#F4F6FA]">
+            HNG &mdash; Hyper Next Generation Group
+          </strong>
+        </p>
+        <p className="text-[11px] text-[#A8B2C1]/75">
+          &copy; 2026 Nguyễn Ngọc Hà Nguyên &bull; music.hng.vn &bull;
+          tech.hng.vn &bull; media.hng.vn &bull; support.hnt@hng.vn
         </p>
       </footer>
     </div>

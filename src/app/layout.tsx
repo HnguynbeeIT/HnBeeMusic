@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { MotionProvider } from "@/components/layout/MotionProvider";
 import { ElectronTitleBar } from "@/components/layout/ElectronTitleBar";
@@ -17,25 +17,32 @@ const inter = Inter({
   display: "swap",
 });
 
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin", "vietnamese"],
+  weight: ["500", "600", "700"],
+  variable: "--font-space-grotesk",
+  display: "swap",
+});
+
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-jetbrains-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  applicationName: "HnBee Music",
-  title: "HnBee Music — Unified Multi-Source Streaming | HNT (HNG)",
+  applicationName: "HnBeeMusic",
+  title: "HnBeeMusic — Powered by HNT & HNM | HNG",
   description:
-    "Unified multi-source audiophile music streaming for Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music & Audius — developed by HNT - HnBee Technologies, a division of Hyper Next Generation (HNG).",
+    "Unified multi-source audiophile music streaming for Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music & Audius — Powered by HNT (Hyper Next Technologies) & HNM (Hyper Next Media), thuộc HNG (Hyper Next Generation Group).",
   authors: [
     {
       name: "Nguyễn Ngọc Hà Nguyên",
-      url: "https://hanguynbeeit-portfolio.vercel.app",
+      url: "https://hng.vn",
     },
   ],
-  creator: "HNT - HnBee Technologies",
-  publisher: "Hyper Next Generation (HNG)",
+  creator: "HNT - Hyper Next Technologies & HNM - Hyper Next Media",
+  publisher: "HNG — Hyper Next Generation Group",
   manifest: "/manifest.json",
   icons: {
     icon: "/icon.png",
@@ -44,7 +51,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "HnBee Music",
+    title: "HnBeeMusic",
   },
 };
 
@@ -54,7 +61,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#09090b",
+  themeColor: "#0B0D12",
 };
 
 export default function RootLayout({
@@ -65,9 +72,9 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
-      className={`dark ${inter.variable} ${jetbrainsMono.variable}`}
+      className={`dark ${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
     >
-      <body className="min-h-screen overflow-x-hidden bg-[#09090b] font-sans text-zinc-100 antialiased selection:bg-emerald-400/30 selection:text-white">
+      <body className="min-h-screen overflow-x-hidden bg-[#0B0D12] font-sans text-[#F4F6FA] antialiased selection:bg-[#00E5FF]/25 selection:text-[#F4F6FA]">
         <MotionProvider>
           <ElectronTitleBar />
           <AmbientGlow />
