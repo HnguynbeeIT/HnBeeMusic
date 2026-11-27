@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
@@ -53,16 +54,39 @@ export function FullScreenPlayerModal() {
     ? likedTracks.some((t) => t.id === currentTrack.id)
     : false;
   const theme = getSourceTheme(currentTrack?.source);
+  const swipeStartYRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullPlayerOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, setFullPlayerOpen]);
+
+  const handleHeaderTouchStart = (e: React.TouchEvent) => {
+    swipeStartYRef.current = e.touches[0]?.clientY ?? null;
+  };
+
+  const handleHeaderTouchEnd = (e: React.TouchEvent) => {
+    const startY = swipeStartYRef.current;
+    swipeStartYRef.current = null;
+    const endY = e.changedTouches[0]?.clientY;
+    if (startY !== null && typeof endY === "number" && endY - startY > 56) {
+      setFullPlayerOpen(false);
+    }
+  };
 
   return (
     <AnimatePresence>
       {isOpen && currentTrack && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 24 }}
           transition={{ duration: 0.25 }}
-          className="fixed inset-0 z-50 flex flex-col bg-[#09090b]/95 backdrop-blur-2xl"
+          className="fixed inset-0 z-[9999] flex flex-col bg-[#09090b]/96 backdrop-blur-2xl"
         >
           {/* Dynamic Ambient Artwork Glow */}
           {currentTrack.thumbnail && (
@@ -73,17 +97,23 @@ export function FullScreenPlayerModal() {
             />
           )}
 
-          {/* Top Bar (iOS Dynamic Island safe-area aware, 44x44px touch targets) */}
-          <div className="flex items-center justify-between px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
-            <motion.button
-              type="button"
-              {...BUTTON_MOTION}
-              onClick={() => setFullPlayerOpen(false)}
-              aria-label="Thu gọn trình phát"
-              className="flex h-11 w-11 items-center justify-center rounded-xl text-zinc-400 hover:bg-white/10 hover:text-white"
-            >
-              <ChevronDown className="h-6 w-6" />
-            </motion.button>
+          {/* Top Bar (iOS Dynamic Island safe-area aware, swipe-down to dismiss, 48x48px touch targets) */}
+          <div
+            onTouchStart={handleHeaderTouchStart}
+            onTouchEnd={handleHeaderTouchEnd}
+            className="pointer-events-auto relative z-20 flex flex-col px-4 pb-3 pt-[max(env(safe-area-inset-top),16px)]"
+          >
+            <div className="mx-auto mb-2.5 h-1.5 w-10 rounded-full bg-white/25 md:hidden" />
+            <div className="flex items-center justify-between">
+              <motion.button
+                type="button"
+                {...BUTTON_MOTION}
+                onClick={() => setFullPlayerOpen(false)}
+                aria-label="Thu gọn trình phát"
+                className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white shadow-lg hover:bg-white/20"
+              >
+                <ChevronDown className="h-6 w-6" />
+              </motion.button>
 
             <div className="flex flex-col items-center">
               <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400">
@@ -136,6 +166,7 @@ export function FullScreenPlayerModal() {
               >
                 <ListMusic className="h-5 w-5" />
               </motion.button>
+            </div>
             </div>
           </div>
 

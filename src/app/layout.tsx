@@ -62,9 +62,9 @@ export default function RootLayout({
           <AmbientGlow />
           <Sidebar />
 
-          {/* Main scrollable viewport: flex-1 overflow-y-auto pb-36, desktop offset for w-64 m-2 sidebar */}
-          <main className="min-h-screen flex-1 overflow-x-hidden overflow-y-auto pb-36 md:pb-32 md:pl-[272px]">
-            <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
+          {/* Main scrollable viewport: portrait safe-area bottom cushion (140px + safe-area) so Mini Player + Nav never cover last track */}
+          <main className="min-h-screen w-full flex-1 overflow-x-hidden overflow-y-auto pb-[calc(140px+env(safe-area-inset-bottom))] md:pb-32 md:pl-[272px]">
+            <div className="mx-auto w-full max-w-5xl px-3.5 py-5 sm:px-8 sm:py-8">
               {children}
             </div>
           </main>

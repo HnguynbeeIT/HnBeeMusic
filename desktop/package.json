@@ -1,0 +1,55 @@
+{
+  "name": "hnbee-music-desktop",
+  "version": "2.5.0",
+  "description": "HnBee Music Desktop App for Windows (Multi-Source Audiophile Streaming)",
+  "main": "main.js",
+  "author": "HnBeeStudio",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64 --publish never",
+    "build:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.hnbeestudio.hnbeemusic",
+    "productName": "HnBee Music",
+    "copyright": "Copyright © 2026 HnBeeStudio",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "HnBee-Music-Setup.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "HnBee Music"
+    },
+    "portable": {
+      "artifactName": "HnBee-Music-Portable.exe"
+    }
+  }
+}

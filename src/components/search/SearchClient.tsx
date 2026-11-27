@@ -267,7 +267,7 @@ export function SearchClient() {
 
         {/* Result Type Tabs (Tất cả | Bài hát | Nghệ sĩ) + Source Filter Tabs */}
         <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl">
+          <div className="no-scrollbar inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl">
             {RESULT_TYPE_TABS.map((tab) => {
               const active = resultType === tab.id;
               return (
@@ -275,7 +275,7 @@ export function SearchClient() {
                   key={tab.id}
                   type="button"
                   onClick={() => setResultType(tab.id)}
-                  className={`relative rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`relative shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
                     active ? "text-zinc-950" : "text-zinc-400 hover:text-white"
                   }`}
                 >
@@ -297,7 +297,7 @@ export function SearchClient() {
             })}
           </div>
 
-          <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl">
+          <div className="no-scrollbar inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl">
             {SOURCE_TABS.map((tab) => {
               const active = source === tab.id;
               return (
@@ -305,7 +305,7 @@ export function SearchClient() {
                   key={tab.id}
                   type="button"
                   onClick={() => setSource(tab.id)}
-                  className={`relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                     active ? "text-white" : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:exe": "npm --prefix desktop install && npm --prefix desktop run build:win"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

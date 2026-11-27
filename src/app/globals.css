@@ -58,3 +58,12 @@
 .animate-marquee:hover {
   animation-play-state: paused;
 }
+
+/* Hide scrollbars cleanly on mobile horizontal carousels & filter bars */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Cloud,
   Headphones,
+  History,
+  Monitor,
   Music2,
   Smartphone,
   Sparkles,
@@ -34,6 +37,34 @@ const EXPERIENCES = [
     title: "Lưu giữ cảm xúc trên mọi thiết bị",
     description:
       "Chỉ cần đăng nhập bằng Google hoặc Facebook, toàn bộ playlist và những bản nhạc bạn thả tim sẽ luôn theo chân bạn từ máy tính sang điện thoại.",
+  },
+];
+
+const WHATS_NEW = [
+  {
+    version: "v2.5.0",
+    badge: "Mới nhất",
+    highlights: [
+      "Tái thiết kế Trang chủ Dark Glassmorphism với Quick Access, Spotlight Hero và dải khám phá ngang.",
+      "Ra mắt bản ứng dụng Desktop Windows (.exe) chạy nền dưới System Tray & điều khiển bằng phím Media.",
+      "Tối ưu màn hình dọc điện thoại và sửa triệt để thao tác đóng / vuốt xuống màn hình Lời bài hát trên iPhone.",
+    ],
+  },
+  {
+    version: "v2.4.0",
+    badge: "Âm thanh",
+    highlights: [
+      "Nâng cấp độ chính xác khớp bài hát cho Playlist Spotify và tối ưu tốc độ tải xuống dưới 1.5 giây.",
+      "Hỗ trợ nghe nền mượt hơn trên iOS với luồng âm thanh trực tiếp và tự chuyển bài khi khóa màn hình.",
+    ],
+  },
+  {
+    version: "v2.3.0",
+    badge: "Trải nghiệm",
+    highlights: [
+      "Bổ sung Chuyển bài mượt (Crossfade 0–8s) và tải trước bài hát kế tiếp không ngắt quãng.",
+      "Đồng bộ Cloud tự động bằng Google / Facebook giữa máy tính và điện thoại.",
+    ],
   },
 ];
 
@@ -76,7 +107,7 @@ export function AboutModal() {
                 <BrandLogo variant="compact" />
                 <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
                   <Sparkles className="h-3 w-3" />
-                  Giới thiệu
+                  v2.5.0
                 </span>
               </div>
 
@@ -144,22 +175,82 @@ export function AboutModal() {
                 </div>
               </section>
 
-              {/* Part 3: Mobile App-Like Experience Tip */}
-              <section className="flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400">
-                  <Smartphone className="h-4 w-4" />
+              {/* Part 3: What's New (Lịch sử cập nhật) */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <History className="h-3.5 w-3.5 text-emerald-400" />
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                    Lịch sử cập nhật (What&apos;s New)
+                  </p>
                 </div>
-                <p className="text-xs leading-relaxed text-zinc-200">
-                  <strong className="font-semibold text-emerald-300">
-                    Mẹo nhỏ:
-                  </strong>{" "}
-                  Chọn{" "}
-                  <strong className="text-white">
-                    &lsquo;Thêm vào Màn hình chính&rsquo;
-                  </strong>{" "}
-                  trên trình duyệt điện thoại để mở HnBee Music toàn màn hình
-                  như một ứng dụng nghe nhạc thực thụ.
-                </p>
+                <div className="space-y-2.5">
+                  {WHATS_NEW.map((rel) => (
+                    <div
+                      key={rel.version}
+                      className="space-y-1.5 rounded-2xl border border-white/10 bg-black/30 p-3.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-white">
+                          {rel.version}
+                        </span>
+                        <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                          {rel.badge}
+                        </span>
+                      </div>
+                      <ul className="space-y-1 text-xs leading-relaxed text-zinc-400">
+                        {rel.highlights.map((line) => (
+                          <li key={line} className="flex items-start gap-1.5">
+                            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-emerald-400" />
+                            <span>{line}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Part 4: Desktop (.exe) & Mobile App Shortcut */}
+              <section className="space-y-2.5">
+                <Link
+                  href="/download"
+                  onClick={() => setAboutOpen(false)}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4 transition-colors hover:bg-emerald-500/20"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
+                      <Monitor className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">
+                        Tải bản PC cho Windows (.exe)
+                      </p>
+                      <p className="text-[11px] text-emerald-200/80">
+                        Chạy nền dưới khay hệ thống &amp; phím tắt bàn phím
+                      </p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-xs font-semibold text-emerald-300">
+                    Mở →
+                  </span>
+                </Link>
+
+                <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-zinc-200">
+                    <Smartphone className="h-4 w-4" />
+                  </div>
+                  <p className="text-xs leading-relaxed text-zinc-300">
+                    <strong className="font-semibold text-white">
+                      Mẹo nhỏ:
+                    </strong>{" "}
+                    Chọn{" "}
+                    <strong className="text-emerald-300">
+                      &lsquo;Thêm vào Màn hình chính&rsquo;
+                    </strong>{" "}
+                    trên trình duyệt điện thoại để mở HnBee Music toàn màn hình
+                    như ứng dụng gốc.
+                  </p>
+                </div>
               </section>
 
               {/* Subtle Brand Footer */}

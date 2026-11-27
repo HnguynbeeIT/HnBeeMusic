@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDownCircle,
   Check,
+  ChevronDown,
   Copy,
   Disc3,
   Maximize2,
@@ -57,8 +58,32 @@ export function LyricsPanel() {
   const [userScrolling, setUserScrolling] = useState(false);
   const [copied, setCopied] = useState(false);
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
+  const swipeStartYRef = useRef<number | null>(null);
 
   const theme = getSourceTheme(currentTrack?.source);
+
+  // Close Lyrics with Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLyricsOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, setLyricsOpen]);
+
+  const handleHeaderTouchStart = (e: React.TouchEvent) => {
+    swipeStartYRef.current = e.touches[0]?.clientY ?? null;
+  };
+
+  const handleHeaderTouchEnd = (e: React.TouchEvent) => {
+    const startY = swipeStartYRef.current;
+    swipeStartYRef.current = null;
+    const endY = e.changedTouches[0]?.clientY;
+    if (startY !== null && typeof endY === "number" && endY - startY > 56) {
+      setLyricsOpen(false);
+    }
+  };
 
   // Automatically prefetch lyrics whenever currentTrack changes (drives BottomPlayerBar indicator dot)
   useEffect(() => {
@@ -116,14 +141,19 @@ export function LyricsPanel() {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div
+          className="fixed inset-0 z-[9999] flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Lời bài hát đồng bộ"
+        >
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setLyricsOpen(false)}
-            className="fixed inset-0 bg-black/55 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/65 backdrop-blur-sm"
           />
 
           <motion.aside
@@ -131,7 +161,7 @@ export function LyricsPanel() {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ duration: 0.36, ease: DRAWER_EASE }}
-            className="relative z-10 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-white/10 bg-zinc-950/85 pb-28 shadow-2xl backdrop-blur-3xl"
+            className="relative z-10 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-white/10 bg-zinc-950/92 pb-[max(7rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-3xl"
           >
             {/* Dynamic cover-tinted glow behind drawer */}
             {currentTrack?.thumbnail && (
@@ -142,55 +172,69 @@ export function LyricsPanel() {
               />
             )}
 
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <MicVocal className={`h-4 w-4 shrink-0 ${theme.textClass}`} />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold text-white">
-                      Synced Lyrics
-                    </h2>
-                    {lyrics?.synced && lyrics.synced.length > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                        <Sparkles className="h-2.5 w-2.5" />
-                        LRCLIB
-                      </span>
+            {/* Sticky Safe-Area Header (iOS Dynamic Island / Notch safe + Swipe Down to close + 48x48px Close button) */}
+            <div
+              onTouchStart={handleHeaderTouchStart}
+              onTouchEnd={handleHeaderTouchEnd}
+              className="pointer-events-auto sticky top-0 z-30 border-b border-white/10 bg-zinc-950/80 px-4 pb-3 pt-[max(env(safe-area-inset-top),16px)] backdrop-blur-xl sm:px-5"
+            >
+              {/* Mobile Swipe-Down Grabber Pill */}
+              <div
+                aria-hidden="true"
+                className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/25 md:hidden"
+              />
+
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <MicVocal className={`h-4 w-4 shrink-0 ${theme.textClass}`} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-semibold text-white">
+                        Synced Lyrics
+                      </h2>
+                      {lyrics?.synced && lyrics.synced.length > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                          <Sparkles className="h-2.5 w-2.5" />
+                          LRCLIB
+                        </span>
+                      )}
+                    </div>
+                    {currentTrack && (
+                      <p className="max-w-[180px] truncate text-xs text-zinc-400 sm:max-w-[210px]">
+                        {currentTrack.title}
+                      </p>
                     )}
                   </div>
-                  {currentTrack && (
-                    <p className="max-w-[210px] truncate text-xs text-zinc-400">
-                      {currentTrack.title}
-                    </p>
-                  )}
                 </div>
-              </div>
 
-              <div className="flex items-center gap-1">
-                {currentTrack && (
+                <div className="flex shrink-0 items-center gap-2">
+                  {currentTrack && (
+                    <motion.button
+                      type="button"
+                      {...BUTTON_MOTION}
+                      onClick={() => {
+                        setLyricsOpen(false);
+                        setFullScreenLyrics(true);
+                      }}
+                      aria-label="Mở chế độ Karaoke toàn màn hình"
+                      title="Toàn màn hình (Karaoke Mode)"
+                      className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-zinc-200 hover:bg-white/20 hover:text-white"
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </motion.button>
+                  )}
                   <motion.button
                     type="button"
                     {...BUTTON_MOTION}
-                    onClick={() => {
-                      setLyricsOpen(false);
-                      setFullScreenLyrics(true);
-                    }}
-                    aria-label="Mở chế độ Karaoke toàn màn hình"
-                    title="Toàn màn hình (Karaoke Mode)"
-                    className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white"
+                    onClick={() => setLyricsOpen(false)}
+                    aria-label="Đóng lời bài hát"
+                    title="Đóng lời bài hát"
+                    className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-white shadow-lg hover:bg-white/25"
                   >
-                    <Maximize2 className="h-4 w-4" />
+                    <ChevronDown className="h-6 w-6 md:hidden" />
+                    <X className="hidden h-5 w-5 md:block" />
                   </motion.button>
-                )}
-                <motion.button
-                  type="button"
-                  {...BUTTON_MOTION}
-                  onClick={() => setLyricsOpen(false)}
-                  aria-label="Đóng lời bài hát"
-                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </motion.button>
+                </div>
               </div>
             </div>
 

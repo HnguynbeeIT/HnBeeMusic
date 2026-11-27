@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -9,6 +10,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Monitor,
   RefreshCw,
   ShieldCheck,
   SkipForward,
@@ -419,6 +421,28 @@ export function ApiSettingsModal() {
                   </button>
                 )}
               </div>
+
+              {/* Desktop App Download Link (Handy on Mobile Settings too) */}
+              <Link
+                href="/download"
+                onClick={() => setSettingsOpen(false)}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3.5 py-3 transition-colors hover:border-emerald-400/30 hover:bg-emerald-500/10"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Monitor className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-white">
+                      Tải bản PC (.exe) &amp; Hướng dẫn cài đặt
+                    </p>
+                    <p className="truncate text-[11px] text-zinc-400">
+                      Windows 10/11 64-bit, iOS &amp; Android
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 text-xs font-semibold text-emerald-400">
+                  Mở →
+                </span>
+              </Link>
 
               {/* Footer Controls */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4">

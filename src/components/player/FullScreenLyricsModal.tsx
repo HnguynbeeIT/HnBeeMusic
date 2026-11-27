@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDownCircle,
   Check,
+  ChevronDown,
   Copy,
   Loader2,
   MicVocal,
@@ -66,8 +67,32 @@ export function FullScreenLyricsModal() {
   const [userScrolling, setUserScrolling] = useState(false);
   const [copied, setCopied] = useState(false);
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
+  const swipeStartYRef = useRef<number | null>(null);
 
   const theme = getSourceTheme(currentTrack?.source);
+
+  // Close Full-Screen Lyrics with Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullScreenLyrics(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, setFullScreenLyrics]);
+
+  const handleHeaderTouchStart = (e: React.TouchEvent) => {
+    swipeStartYRef.current = e.touches[0]?.clientY ?? null;
+  };
+
+  const handleHeaderTouchEnd = (e: React.TouchEvent) => {
+    const startY = swipeStartYRef.current;
+    swipeStartYRef.current = null;
+    const endY = e.changedTouches[0]?.clientY;
+    if (startY !== null && typeof endY === "number" && endY - startY > 56) {
+      setFullScreenLyrics(false);
+    }
+  };
 
   const activeIndex = useMemo(() => {
     if (!lyrics?.synced?.length) return -1;
@@ -112,11 +137,14 @@ export function FullScreenLyricsModal() {
     <AnimatePresence>
       {isOpen && currentTrack && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
           transition={{ duration: 0.25 }}
-          className="fixed inset-0 z-[60] flex flex-col bg-[#09090b]/95 backdrop-blur-3xl"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Lời bài hát Karaoke toàn màn hình"
+          className="fixed inset-0 z-[9999] flex flex-col bg-[#09090b]/96 backdrop-blur-3xl"
         >
           {/* Dynamic Ambient Cover Backdrop */}
           {currentTrack.thumbnail && (
@@ -127,84 +155,96 @@ export function FullScreenLyricsModal() {
             />
           )}
 
-          {/* Top Bar */}
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 sm:px-8">
-            <div className="flex items-center gap-2.5">
-              <MicVocal className={`h-4 w-4 ${theme.textClass}`} />
-              <span className="text-sm font-semibold text-white">
-                Karaoke Lyrics Mode
-              </span>
-              {lyrics?.synced && lyrics.synced.length > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
-                  <Sparkles className="h-3 w-3" />
-                  LRCLIB Real-time Sync
+          {/* Fixed Safe-Area Top Bar (Dynamic Island / Notch safe + Swipe Down + 48x48px Close button) */}
+          <div
+            onTouchStart={handleHeaderTouchStart}
+            onTouchEnd={handleHeaderTouchEnd}
+            className="pointer-events-auto sticky top-0 z-30 border-b border-white/10 bg-[#09090b]/80 px-4 pb-3 pt-[max(env(safe-area-inset-top),16px)] backdrop-blur-xl sm:px-8"
+          >
+            <div
+              aria-hidden="true"
+              className="mx-auto mb-2.5 h-1.5 w-10 rounded-full bg-white/25 md:hidden"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <MicVocal className={`h-4 w-4 shrink-0 ${theme.textClass}`} />
+                <span className="truncate text-sm font-semibold text-white">
+                  Karaoke Lyrics
                 </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* Font size switcher */}
-              <div className="hidden items-center gap-1 rounded-xl border border-white/10 bg-black/40 p-1 sm:inline-flex">
-                {FONT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setFontSize(opt.id)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                      fontSize === opt.id
-                        ? "bg-white/15 text-white"
-                        : "text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+                {lyrics?.synced && lyrics.synced.length > 0 && (
+                  <span className="hidden items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400 sm:inline-flex">
+                    <Sparkles className="h-3 w-3" />
+                    LRCLIB Real-time Sync
+                  </span>
+                )}
               </div>
 
-              {(lyrics?.synced.length || lyrics?.plain) && (
+              <div className="flex shrink-0 items-center gap-2">
+                {/* Font size switcher */}
+                <div className="hidden items-center gap-1 rounded-xl border border-white/10 bg-black/40 p-1 sm:inline-flex">
+                  {FONT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setFontSize(opt.id)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                        fontSize === opt.id
+                          ? "bg-white/15 text-white"
+                          : "text-zinc-400 hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {(lyrics?.synced.length || lyrics?.plain) && (
+                  <motion.button
+                    type="button"
+                    {...BUTTON_MOTION}
+                    onClick={() => void handleCopyLyrics()}
+                    className="hidden items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-white/10 sm:inline-flex"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        Đã chép
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy Lyrics
+                      </>
+                    )}
+                  </motion.button>
+                )}
+
                 <motion.button
                   type="button"
                   {...BUTTON_MOTION}
-                  onClick={() => void handleCopyLyrics()}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/10"
+                  onClick={() => {
+                    setFullScreenLyrics(false);
+                    setLyricsOpen(true);
+                  }}
+                  aria-label="Thu gọn về Side Drawer"
+                  title="Thu gọn về cửa sổ trượt"
+                  className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-zinc-200 hover:bg-white/20 hover:text-white"
                 >
-                  {copied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      Đã chép
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      Copy Lyrics
-                    </>
-                  )}
+                  <Minimize2 className="h-4 w-4" />
                 </motion.button>
-              )}
 
-              <motion.button
-                type="button"
-                {...BUTTON_MOTION}
-                onClick={() => {
-                  setFullScreenLyrics(false);
-                  setLyricsOpen(true);
-                }}
-                aria-label="Thu gọn về Side Drawer"
-                title="Thu gọn về cửa sổ trượt"
-                className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-white"
-              >
-                <Minimize2 className="h-4 w-4" />
-              </motion.button>
-
-              <motion.button
-                type="button"
-                {...BUTTON_MOTION}
-                onClick={() => setFullScreenLyrics(false)}
-                aria-label="Đóng toàn màn hình"
-                className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </motion.button>
+                <motion.button
+                  type="button"
+                  {...BUTTON_MOTION}
+                  onClick={() => setFullScreenLyrics(false)}
+                  aria-label="Đóng toàn màn hình"
+                  title="Đóng lời bài hát"
+                  className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-white shadow-lg hover:bg-white/25"
+                >
+                  <ChevronDown className="h-6 w-6 md:hidden" />
+                  <X className="hidden h-5 w-5 md:block" />
+                </motion.button>
+              </div>
             </div>
           </div>
 

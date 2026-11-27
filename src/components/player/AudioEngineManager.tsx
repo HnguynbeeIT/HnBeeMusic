@@ -895,6 +895,26 @@ export function AudioEngineManager() {
 
   const handleMediaNext = useCallback(() => playNext(false), [playNext]);
 
+  // Expose physical keyboard media bridge for Electron Desktop (.exe) globalShortcut & System Tray
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const win = window as unknown as {
+      __hnbeeMediaAction?: (action: "playPause" | "next" | "prev") => void;
+    };
+    win.__hnbeeMediaAction = (action) => {
+      if (action === "playPause") {
+        usePlayerStore.getState().togglePlay();
+      } else if (action === "next") {
+        playNext(false);
+      } else if (action === "prev") {
+        playPrev();
+      }
+    };
+    return () => {
+      delete win.__hnbeeMediaAction;
+    };
+  }, [playNext, playPrev]);
+
   useMediaSession({
     currentTrack,
     isPlaying,

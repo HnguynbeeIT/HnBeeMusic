@@ -10,6 +10,7 @@ import {
   Home,
   Info,
   Library,
+  Monitor,
   Play,
   Search,
   Settings,
@@ -401,10 +402,21 @@ export function Sidebar() {
               </>
             )}
           </motion.button>
+          <Link
+            href="/download"
+            className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
+              pathname === "/download"
+                ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
+                : "border-emerald-400/20 bg-emerald-500/[0.08] text-emerald-300 hover:bg-emerald-500/20"
+            }`}
+          >
+            <Monitor className="h-3.5 w-3.5" />
+            Tải bản PC (.exe)
+          </Link>
           <button
             type="button"
             onClick={() => setAboutOpen(true)}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
           >
             <Info className="h-3.5 w-3.5 text-emerald-400" />
             Giới thiệu HnBee Music
