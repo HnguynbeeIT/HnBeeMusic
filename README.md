@@ -41,22 +41,33 @@
 
 ---
 
-## Kiến trúc hệ thống
+## Kiến trúc hệ thống (Multi-Platform Adapter Pattern & Stream Proxy)
 
 ```mermaid
 flowchart LR
     UI["Audiophile Glass UI (Next.js App Router + Framer Motion)"]
     Store["Zustand Stores (Player + Playlists + Auth + BYOK Settings)"]
-    Engine["AudioEngineManager (YouTube IFrame + HTML5 Audio + SC Widget + Media Session)"]
-    API["Vercel Serverless API Routes (/api/search, /api/resolve, /api/stream/soundcloud, /api/lyrics, /api/auth/*)"]
-    Adapters["Source Adapters (youtube.ts | soundcloud.ts | spotify.ts | lyrics.ts)"]
+    Proxy["Audio Stream Proxy (GET /api/stream/:unifiedId — HTTP 206 Partial Content)"]
+    Agg["AggregatorService (Promise.allSettled + Stream TTL Cache)"]
+    Adapters["IAudioAdapter (YouTube | SoundCloud | Zing MP3 | NCT | Spotify | Apple Music)"]
 
     UI <--> Store
-    Engine <--> Store
-    UI -->|"Debounced 400ms + Optional BYOK Headers"| API
-    Engine -->|"Lazy Spotify Match & SC Stream"| API
-    API -->|"unstable_cache + CDN s-maxage"| Adapters
+    UI -->|"UnifiedTrack (source:id)"| Proxy
+    Proxy -->|"Resolve + Referer/UA Headers"| Agg
+    Agg -->|"Parallel 5000ms Timeout + 1x Retry"| Adapters
 ```
+
+## Platform Matrix (Bảng Trạng Thái Nền Tảng)
+
+| Nền tảng | `PlatformSource` | Trạng thái | Luồng phát & Chất lượng | Synced Lyrics | Biến `.env` liên quan |
+|---|---|---|---|---|---|
+| **YouTube** | `youtube` | ✅ Hoạt động | Direct Audio (`youtubei.js`, `128kbps`–`320kbps`) + `expiresAt` | Qua LRCLIB | `YOUTUBE_API_KEY` *(tùy chọn)* |
+| **SoundCloud** | `soundcloud` | ✅ Hoạt động | Direct Progressive MP3 / HLS (`128kbps`–`320kbps`) | Qua LRCLIB | `SOUNDCLOUD_CLIENT_ID` *(tự trích xuất nếu trống)* |
+| **Zing MP3** | `zingmp3` | ✅ Hoạt động | Direct MP3/M4A (`128kbps` miễn phí / `320kbps` với VIP cookie) | ✅ Có (`sentences` / LRC) | `ZINGMP3_COOKIE`, `ZINGMP3_API_KEY`, `ZINGMP3_SECRET_KEY` *(tùy chọn)* |
+| **NhacCuaTui** | `nct` | ✅ Hoạt động | Direct MP3/M4A (`128kbps`–`320kbps`, tự cấp token + XML fallback) | ✅ Có (`lrc`) | `NCT_ACCESS_TOKEN`, `NCT_API_SECRET` *(tùy chọn)* |
+| **Spotify** | `spotify` | ✅ Hoạt động (`requiresSdk: true`) | Metadata + Preview / Web Playback SDK (Widevine DRM) | Qua LRCLIB | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` |
+| **Apple Music** | `apple_music` | ✅ Hoạt động (`requiresSdk: true`) | MusicKit / iTunes Catalog + AAC Preview / MusicKit JS SDK (FairPlay DRM) | Qua LRCLIB | `APPLE_MUSIC_DEVELOPER_TOKEN`, `APPLE_MUSIC_STOREFRONT` *(tùy chọn)* |
+| **Deezer / Tidal / Bandcamp / Jamendo** | `deezer`, `tidal`, `bandcamp`, `jamendo` | 🔜 Sẵn sàng mở rộng | Đã chuẩn hóa sẵn trong `PlatformSource` & `BaseAdapter` | — | — |
 
 ---
 
