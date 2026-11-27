@@ -1,6 +1,8 @@
-# Contributing to HnBeeMusic
+# Contributing to HnBee Music
 
-Cảm ơn bạn đã quan tâm đóng góp cho **HnBeeMusic**! Dự án theo đuổi triết lý mã nguồn sạch, dễ mở rộng và tối ưu 60fps.
+> Dự án thuộc **HNT - HnBee Technologies** &bull; *A division of **Hyper Next Generation (HNG)***
+
+Cảm ơn bạn đã quan tâm đóng góp cho **HnBee Music**! Dự án theo đuổi triết lý mã nguồn sạch, dễ mở rộng và tối ưu 60fps.
 
 ## 1. Quy trình đóng góp nhanh
 1. **Fork** repository và tạo nhánh mới từ `main`:

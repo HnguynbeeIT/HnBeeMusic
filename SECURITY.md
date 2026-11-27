@@ -1,5 +1,7 @@
 # Chính Sách Bảo Mật — HnBee Music (Security Policy)
 
+> Đơn vị quản lý: **HNT - HnBee Technologies** &bull; *A division of **Hyper Next Generation (HNG)***
+
 Tài liệu này mô tả kiến trúc bảo mật, nguyên tắc bảo vệ khóa bí mật (Secrets) trên kho mã nguồn công khai (`Public Repository`) và quy trình báo cáo lỗ hổng bảo mật cho **HnBee Music**.
 
 ---

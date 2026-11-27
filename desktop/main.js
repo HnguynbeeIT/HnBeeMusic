@@ -5,6 +5,7 @@ const {
   BrowserWindow,
   Menu,
   Tray,
+  dialog,
   globalShortcut,
   ipcMain,
   nativeImage,
@@ -423,6 +424,19 @@ function createTray() {
     },
     { type: "separator" },
     {
+      label: "Giới thiệu HnBee Music",
+      click: () => {
+        dialog.showMessageBox(mainWindow || undefined, {
+          type: "info",
+          title: "Giới thiệu HnBee Music",
+          message: "HnBee Music Desktop v2.5.1",
+          detail:
+            "Đơn vị phát triển: HNT - HnBee Technologies\nTrực thuộc: Hyper Next Generation (HNG)\nTác giả: Nguyễn Ngọc Hà Nguyên\n\nCopyright © 2026 Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies | Hyper Next Generation (HNG)",
+          buttons: ["Đóng"],
+        });
+      },
+    },
+    {
       label: "Thoát hẳn HnBee Music",
       click: () => {
         isQuitting = true;
@@ -469,6 +483,14 @@ ipcMain.on("hnbee:open-oauth", (_event, provider) => {
 });
 
 app.whenReady().then(() => {
+  app.setAboutPanelOptions({
+    applicationName: "HnBee Music",
+    applicationVersion: "2.5.1",
+    copyright:
+      "Copyright © 2026 Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies | Hyper Next Generation (HNG)",
+    credits:
+      "HNT - HnBee Technologies • A division of Hyper Next Generation (HNG)",
+  });
   createWindow();
   createTray();
   registerMediaKeys();

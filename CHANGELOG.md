@@ -1,5 +1,7 @@
 # Nhật ký Phát triển & Lịch sử Cập nhật — HnBee Music
 
+> Phát triển bởi **HNT - HnBee Technologies** &bull; *A division of **Hyper Next Generation (HNG)***
+
 Tài liệu này tổng hợp toàn bộ hành trình xây dựng, nâng cấp tính năng và vá lỗi của **HnBee Music** từ phiên bản khởi tạo (`v1.0.0`) đến phiên bản mới nhất (`v2.5.1`).
 
 ---

@@ -254,13 +254,19 @@ export function AboutModal() {
               </section>
 
               {/* Subtle Brand Footer */}
-              <footer className="border-t border-white/10 pt-4 text-center">
-                <p className="text-xs text-zinc-400">
+              <footer className="space-y-1 border-t border-white/10 pt-4 text-center">
+                <p className="text-xs text-zinc-300">
                   Phát triển bởi{" "}
-                  <span className="font-semibold text-zinc-200">
-                    HnBeeStudio
+                  <span className="font-semibold text-white">
+                    HNT - HnBee Technologies
+                  </span>
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  A division of{" "}
+                  <span className="font-medium text-zinc-200">
+                    Hyper Next Generation (HNG)
                   </span>{" "}
-                  • Dành tặng cộng đồng yêu âm nhạc.
+                  &bull; Dành tặng cộng đồng yêu âm nhạc.
                 </p>
               </footer>
             </div>

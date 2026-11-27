@@ -24,9 +24,18 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HnBee Music — Unified Multi-Source Streaming",
+  applicationName: "HnBee Music",
+  title: "HnBee Music — Unified Multi-Source Streaming | HNT (HNG)",
   description:
-    "Open-source multi-source music streaming client for Spotify, YouTube, and SoundCloud.",
+    "Unified multi-source audiophile music streaming for Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music & Audius — developed by HNT - HnBee Technologies, a division of Hyper Next Generation (HNG).",
+  authors: [
+    {
+      name: "Nguyễn Ngọc Hà Nguyên",
+      url: "https://hanguynbeeit-portfolio.vercel.app",
+    },
+  ],
+  creator: "HNT - HnBee Technologies",
+  publisher: "Hyper Next Generation (HNG)",
   manifest: "/manifest.json",
   icons: {
     icon: "/icon.png",

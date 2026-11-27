@@ -302,6 +302,24 @@ export default function DownloadPage() {
           </div>
         </div>
       </section>
+
+      {/* Organization & Publisher Footer */}
+      <footer className="rounded-2xl border border-white/10 bg-zinc-900/45 px-5 py-4 text-center backdrop-blur-xl">
+        <p className="text-xs font-semibold text-zinc-200">
+          HNT - HnBee Technologies{" "}
+          <span className="font-normal text-zinc-500">&bull;</span>{" "}
+          <span className="font-normal text-zinc-400">
+            A division of{" "}
+            <strong className="font-semibold text-zinc-200">
+              Hyper Next Generation (HNG)
+            </strong>
+          </span>
+        </p>
+        <p className="mt-1 text-[11px] text-zinc-500">
+          &copy; 2026 Nguyễn Ngọc Hà Nguyên &mdash; Nhà phát hành chính thức của
+          HnBee Music (Web, PWA &amp; Windows Desktop).
+        </p>
+      </footer>
     </div>
   );
 }

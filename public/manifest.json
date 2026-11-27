@@ -1,7 +1,7 @@
 {
-  "name": "HnBee Music — Unified Multi-Source Streaming",
+  "name": "HnBee Music — HNT - HnBee Technologies (HNG)",
   "short_name": "HnBee Music",
-  "description": "Multi-source music streaming client for Spotify, YouTube, and SoundCloud with background playback and Server Cloud Sync.",
+  "description": "Multi-source audiophile music streaming for Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music & Audius — by HNT - HnBee Technologies, a division of Hyper Next Generation (HNG).",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

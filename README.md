@@ -146,8 +146,9 @@ Xem thêm hướng dẫn chi tiết tại [CONTRIBUTING.md](./CONTRIBUTING.md), 
 - **HnBee Music** là dự án mã nguồn mở phục vụ mục đích học tập, nghiên cứu kiến trúc phần mềm và trải nghiệm nghe nhạc cá nhân.
 - Ứng dụng không lưu trữ và không phân phối tệp âm thanh có bản quyền trên máy chủ riêng; mọi luồng phát và metadata đều được kết nối trực tiếp từ các nền tảng gốc theo yêu cầu của người dùng.
 
-## Tác Giả & Bản Quyền (Author & License)
+## Tác Giả & Bản Quyền (Author & Organization)
 
-- **Tác giả:** **Nguyễn Ngọc Hà Nguyên (HnBeeStudio)** — `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT))
+- **Tác giả:** **Nguyễn Ngọc Hà Nguyên** — `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT))
+- **Đơn vị phát triển:** **HNT - HnBee Technologies** &bull; *A division of **Hyper Next Generation (HNG)***
 - **Portfolio:** [hanguynbeeit-portfolio.vercel.app](https://hanguynbeeit-portfolio.vercel.app)
-- **Giấy phép:** Phát hành dưới giấy phép **[MIT License](./LICENSE)** &copy; 2026 **Nguyễn Ngọc Hà Nguyên (HnBeeStudio)**.
+- **Giấy phép:** Phát hành dưới giấy phép **[MIT License](./LICENSE)** &copy; 2026 **Nguyễn Ngọc Hà Nguyên — HNT - HnBee Technologies | Hyper Next Generation (HNG)**.
