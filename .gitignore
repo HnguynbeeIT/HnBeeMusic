@@ -39,3 +39,13 @@ Thumbs.db
 desktop/node_modules/
 desktop/dist/
 desktop/package-lock.json
+
+# Local workspace / IDE / Assistant configs (kept local only)
+.agents/
+.antigravity/
+AGENTS.md
+.cursor*
+.claude/
+CLAUDE.md
+GEMINI.md
+.idx/

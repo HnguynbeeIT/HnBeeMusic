@@ -109,9 +109,10 @@ Mọi đóng góp (Pull Request, Issue, hoặc thêm `AudioAdapter` mới như Z
 
 ## Author / Maintainer
 
-- **Creator**: `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT))
+- **Tác giả**: **Nguyễn Ngọc Hà Nguyên (HnBeeStudio)** — `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT))
 - **Portfolio**: [hanguynbeeit-portfolio.vercel.app](https://hanguynbeeit-portfolio.vercel.app)
+- **Windows Desktop (.exe)**: [Tải xuống bản mới nhất (GitHub Releases)](https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest)
 
 ## Giấy phép
 
-Phát hành dưới giấy phép **[MIT License](./LICENSE)** © 2026 HnBeeMusic Contributors.
+Phát hành dưới giấy phép **[MIT License](./LICENSE)** © 2026 Nguyễn Ngọc Hà Nguyên (HnBeeStudio).
