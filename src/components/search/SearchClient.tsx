@@ -301,15 +301,21 @@ export function SearchClient() {
             })}
           </div>
 
-          <div className="no-scrollbar inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl">
+          <div
+            role="tablist"
+            aria-label="Lọc theo nền tảng nhạc"
+            className="no-scrollbar inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl"
+          >
             {SOURCE_TABS.map((tab) => {
               const active = source === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
+                  role="tab"
+                  aria-selected={active}
                   onClick={() => setSource(tab.id)}
-                  className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`relative flex shrink-0 select-none items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium caret-transparent transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/30 ${
                     active ? "text-white" : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
@@ -317,13 +323,15 @@ export function SearchClient() {
                     <motion.span
                       layoutId="activeSourceTab"
                       transition={SPRING_PHYSICS}
-                      className="absolute inset-0 -z-10 rounded-full border border-white/15 bg-white/15 shadow-sm"
+                      className="absolute inset-0 z-0 rounded-full border border-white/20 bg-white/15 shadow-sm"
                     />
                   )}
                   {tab.dotClass && (
-                    <span className={`h-1.5 w-1.5 rounded-full ${tab.dotClass}`} />
+                    <span
+                      className={`relative z-10 h-1.5 w-1.5 rounded-full ${tab.dotClass}`}
+                    />
                   )}
-                  <span>{tab.label}</span>
+                  <span className="relative z-10">{tab.label}</span>
                 </button>
               );
             })}
@@ -466,14 +474,15 @@ export function SearchClient() {
 
           {/* Tracks List */}
           {tracks.length === 0 &&
+          debouncedQuery.trim().length > 0 &&
           (resultType === "tracks" || artists.length === 0) ? (
             <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-10 text-center backdrop-blur-xl">
               <p className="text-sm font-medium text-zinc-300">
                 Không tìm thấy bài hát phù hợp cho &ldquo;{debouncedQuery}&rdquo;
               </p>
               <p className="mt-1 text-xs text-zinc-500">
-                Thử từ khóa khác hoặc dán trực tiếp link Spotify / YouTube /
-                SoundCloud.
+                Thử từ khóa khác hoặc dán trực tiếp link Spotify, YouTube,
+                SoundCloud, Zing MP3, NhacCuaTui, Apple Music hoặc Audius.
               </p>
             </div>
           ) : (

@@ -12,6 +12,7 @@ import { searchSpotify } from "@/lib/adapters/spotify";
 import {
   appleMusicProviderAdapter,
   audiusProviderAdapter,
+  getTrendingTracksBySource,
   nhacCuaTuiProviderAdapter,
   zingMp3ProviderAdapter,
 } from "@/lib/adapters/extended-providers";
@@ -147,6 +148,14 @@ async function executeSearch(
   };
 }
 
+const runCachedProviderTrending = unstable_cache(
+  async (source: TrackSource) => {
+    return getTrendingTracksBySource(source, 12);
+  },
+  ["hnbee-provider-trending-v1"],
+  { revalidate: 900 }
+);
+
 const runCachedSearch = unstable_cache(
   async (
     query: string,
@@ -196,6 +205,37 @@ export async function GET(request: NextRequest) {
   );
 
   if (!query) {
+    if (
+      source === "zingmp3" ||
+      source === "nhaccuatui" ||
+      source === "apple_music" ||
+      source === "audius"
+    ) {
+      const trendingTracks = await runCachedProviderTrending(source);
+      return NextResponse.json<SearchResponse>(
+        {
+          tracks: trendingTracks,
+          artists: [],
+          sources: {
+            youtube: ytHeader || process.env.YOUTUBE_API_KEY ? "live" : "fallback",
+            soundcloud: "live",
+            spotify:
+              (spIdHeader && spSecretHeader) ||
+              (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET)
+                ? "live"
+                : "fallback",
+            [source]: trendingTracks.length > 0 ? "live" : "fallback",
+          },
+          cached: true,
+        },
+        {
+          headers: {
+            "Cache-Control": "public, s-maxage=900, stale-while-revalidate=3600",
+          },
+        }
+      );
+    }
+
     return NextResponse.json<SearchResponse>({
       tracks: searchFallbackCatalog("", source),
       sources: {

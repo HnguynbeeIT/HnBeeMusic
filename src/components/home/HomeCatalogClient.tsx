@@ -92,6 +92,15 @@ function getTimeGreeting(hour: number): string {
   return "Chào buổi tối";
 }
 
+const EXTENDED_TRENDING_SOURCES = new Set<TrackSource>([
+  "zingmp3",
+  "nhaccuatui",
+  "apple_music",
+  "audius",
+]);
+
+const providerTrendingCache = new Map<string, UnifiedTrack[]>();
+
 export function HomeCatalogClient({
   tracks,
   curatedPlaylists,
@@ -109,6 +118,10 @@ export function HomeCatalogClient({
   const [liveResults, setLiveResults] = useState<UnifiedTrack[] | null>(null);
   const [liveArtists, setLiveArtists] = useState<ArtistSearchItem[]>([]);
   const [searching, setSearching] = useState(false);
+  const [providerDefaultTracks, setProviderDefaultTracks] = useState<
+    UnifiedTrack[] | null
+  >(null);
+  const [loadingProviderDefaults, setLoadingProviderDefaults] = useState(false);
 
   // SSR-safe real-time greeting
   useEffect(() => {
@@ -177,11 +190,66 @@ export function HomeCatalogClient({
     return () => controller.abort();
   }, [debouncedQuery, filter, region, isSearchActive, byokVersion]);
 
+  // Auto-load trending/default tracks when switching to an extended provider tab with empty search
+  useEffect(() => {
+    if (
+      isSearchActive ||
+      filter === "all" ||
+      !EXTENDED_TRENDING_SOURCES.has(filter)
+    ) {
+      setProviderDefaultTracks(null);
+      setLoadingProviderDefaults(false);
+      return;
+    }
+
+    const cacheKey = `${region}|${filter}`;
+    const cached = providerTrendingCache.get(cacheKey);
+    if (cached && cached.length > 0) {
+      setProviderDefaultTracks(cached);
+      setLoadingProviderDefaults(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoadingProviderDefaults(true);
+    setProviderDefaultTracks(null);
+
+    const params = new URLSearchParams({
+      source: filter,
+      region,
+    });
+
+    fetch(`/api/search?${params.toString()}`, {
+      signal: controller.signal,
+      headers: getByokHeaders(),
+    })
+      .then((res) => res.json())
+      .then((data: SearchResponse) => {
+        const list = Array.isArray(data.tracks) ? data.tracks : [];
+        if (list.length > 0) {
+          providerTrendingCache.set(cacheKey, list);
+        }
+        setProviderDefaultTracks(list);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setProviderDefaultTracks([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingProviderDefaults(false);
+      });
+
+    return () => controller.abort();
+  }, [filter, region, isSearchActive]);
+
   const displayedTracks = useMemo(() => {
     if (isSearchActive) return liveResults ?? [];
     if (filter === "all") return tracks;
+    if (EXTENDED_TRENDING_SOURCES.has(filter)) {
+      return providerDefaultTracks ?? [];
+    }
     return tracks.filter((t) => t.source === filter);
-  }, [tracks, filter, isSearchActive, liveResults]);
+  }, [tracks, filter, isSearchActive, liveResults, providerDefaultTracks]);
 
   const heroTrack = currentTrack ?? tracks[0];
   const heroTheme = getSourceTheme(heroTrack?.source);
@@ -682,11 +750,11 @@ export function HomeCatalogClient({
         </div>
       </section>
 
-      {/* 5. MULTI-SOURCE SHOWCASE (SPOTIFY • YOUTUBE • SOUNDCLOUD) + LIVE SEARCH */}
-      <section className="space-y-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
+      {/* 5. MULTI-SOURCE SHOWCASE (7 PLATFORMS) + LIVE SEARCH */}
+      <section className="w-full min-w-0 space-y-4">
+        <div className="flex w-full min-w-0 flex-col gap-3">
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
               <h2 className="text-lg font-bold tracking-tight text-white">
                 Tuyển chọn đa nền tảng
               </h2>
@@ -697,16 +765,16 @@ export function HomeCatalogClient({
             <button
               type="button"
               onClick={focusImportUrlBar}
-              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
             >
               <ListPlus className="h-3.5 w-3.5" />
               Import URL
             </button>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex w-full min-w-0 flex-col gap-3">
             {/* Live Debounced Search Input */}
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-md">
+            <div className="flex w-full min-w-0 items-center gap-2 sm:max-w-md">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <input
@@ -788,33 +856,45 @@ export function HomeCatalogClient({
               </div>
             </div>
 
-            {/* Source Filter Pills (portrait-safe horizontal scroll without scrollbar) */}
-            <div className="no-scrollbar inline-flex max-w-full items-center gap-1 self-start overflow-x-auto rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl sm:self-auto">
-              {FILTER_TABS.map((tab) => {
-                const active = filter === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setFilter(tab.id)}
-                    className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                      active ? "text-white" : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="activeSourceTab"
-                        transition={SPRING_PHYSICS}
-                        className="absolute inset-0 -z-10 rounded-full border border-white/15 bg-white/15 shadow-sm"
-                      />
-                    )}
-                    {tab.dotClass && (
-                      <span className={`h-1.5 w-1.5 rounded-full ${tab.dotClass}`} />
-                    )}
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
+            {/* Source Filter Pills (full-width aligned, zero text caret, unified active pill) */}
+            <div className="w-full min-w-0">
+              <div
+                role="tablist"
+                aria-label="Lọc theo nền tảng nhạc"
+                className="no-scrollbar inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl"
+              >
+                {FILTER_TABS.map((tab) => {
+                  const active = filter === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setFilter(tab.id)}
+                      className={`relative flex shrink-0 select-none items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium caret-transparent transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/30 ${
+                        active
+                          ? "text-white"
+                          : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="activeSourceTab"
+                          transition={SPRING_PHYSICS}
+                          className="absolute inset-0 z-0 rounded-full border border-white/20 bg-white/15 shadow-sm"
+                        />
+                      )}
+                      {tab.dotClass && (
+                        <span
+                          className={`relative z-10 h-1.5 w-1.5 rounded-full ${tab.dotClass}`}
+                        />
+                      )}
+                      <span className="relative z-10">{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -849,7 +929,7 @@ export function HomeCatalogClient({
         )}
 
         {/* Skeleton Loader or Artists + Track List */}
-        {searching ? (
+        {searching || loadingProviderDefaults ? (
           <TrackSkeleton count={6} />
         ) : isSearchActive && resultType === "artists" ? (
           liveArtists.length === 0 ? (
@@ -897,9 +977,8 @@ export function HomeCatalogClient({
               )}
 
             {displayedTracks.length === 0 &&
-            (!isSearchActive ||
-              resultType === "tracks" ||
-              liveArtists.length === 0) ? (
+            isSearchActive &&
+            (resultType === "tracks" || liveArtists.length === 0) ? (
               <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-10 text-center backdrop-blur-xl">
                 <p className="text-sm font-medium text-zinc-300">
                   Không tìm thấy kết quả cho &ldquo;{debouncedQuery}&rdquo;

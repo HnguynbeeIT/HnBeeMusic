@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureAdaptersRegistered, zingMp3Adapter } from "@/adapters";
 import { handleUnifiedStreamRequest } from "@/controllers/stream.controller";
-import { zingMp3ProviderAdapter } from "@/lib/adapters/extended-providers";
+import {
+  getTrendingTracksBySource,
+  zingMp3ProviderAdapter,
+} from "@/lib/adapters/extended-providers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,6 +13,12 @@ export async function GET(request: NextRequest) {
   ensureAdaptersRegistered();
   const { searchParams } = request.nextUrl;
   const action = (searchParams.get("action") || "stream").toLowerCase();
+
+  if (action === "trending") {
+    const limit = Math.min(Number(searchParams.get("limit") || "12") || 12, 20);
+    const tracks = await getTrendingTracksBySource("zingmp3", limit);
+    return NextResponse.json({ tracks });
+  }
 
   if (action === "search") {
     const q = (searchParams.get("q") || "").trim();

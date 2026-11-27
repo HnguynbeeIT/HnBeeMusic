@@ -92,6 +92,24 @@ export class AudiusAdapter extends BaseAdapter {
     });
   }
 
+  public async getTrending(limit: number = 12): Promise<UnifiedTrack[]> {
+    return this.safeExecute("getTrending", [], async () => {
+      const params = new URLSearchParams({
+        limit: String(Math.min(limit, 25)),
+        app_name: AUDIUS_APP_NAME,
+      });
+      const items = await this.requestDiscovery<AudiusTrackPayload[]>(
+        `/v1/tracks/trending?${params.toString()}`
+      );
+      if (!Array.isArray(items)) return [];
+
+      return items
+        .map((item) => this.mapTrack(item))
+        .filter((t): t is UnifiedTrack => Boolean(t))
+        .slice(0, limit);
+    });
+  }
+
   public async search(query: string, limit: number = 10): Promise<UnifiedTrack[]> {
     return this.safeExecute("search", [], async () => {
       const trimmed = query.trim();

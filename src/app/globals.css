@@ -20,6 +20,11 @@
     touch-action: manipulation;
   }
 
+  button {
+    caret-color: transparent;
+    user-select: none;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

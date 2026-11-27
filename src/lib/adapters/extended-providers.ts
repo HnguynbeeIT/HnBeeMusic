@@ -382,3 +382,229 @@ export function findExtendedAdapterForUrl(url: string): AudioAdapter | null {
     EXTENDED_AUDIO_ADAPTERS.find((adapter) => adapter.canHandleUrl(url)) ?? null
   );
 }
+
+const VPOP_DEFAULT_SEEDS = [
+  "Sơn Tùng M-TP",
+  "Hoàng Dũng",
+  "MCK",
+  "Binz",
+] as const;
+
+/**
+ * Curated V-Pop fallback tracks for NhacCuaTui when NCT Graph API blocks cloud/non-VN IPs,
+ * ensuring the NhacCuaTui tab always displays 10 playable tracks with crisp cover art.
+ */
+const NCT_CURATED_VPOP_FALLBACK: UnifiedTrack[] = [
+  {
+    id: "nhaccuatui:vpop-nnca",
+    title: "Nơi Này Có Anh",
+    artist: "Sơn Tùng M-TP",
+    thumbnail: "https://i.ytimg.com/vi/FN7ALfpGxiI/hqdefault.jpg",
+    duration: 260,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/noi-nay-co-anh-son-tung-m-tp.html",
+    streamUrl: "https://www.youtube.com/watch?v=FN7ALfpGxiI",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-dlttad",
+    title: "Đừng Làm Trái Tim Anh Đau",
+    artist: "Sơn Tùng M-TP",
+    thumbnail: "https://i.ytimg.com/vi/abPmZCZZrFA/hqdefault.jpg",
+    duration: 279,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/dung-lam-trai-tim-anh-dau-son-tung-m-tp.html",
+    streamUrl: "https://www.youtube.com/watch?v=abPmZCZZrFA",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-nangtho",
+    title: "Nàng Thơ",
+    artist: "Hoàng Dũng",
+    thumbnail: "https://i.ytimg.com/vi/Zzn9-ATB9aU/hqdefault.jpg",
+    duration: 254,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/nang-tho-hoang-dung.html",
+    streamUrl: "https://www.youtube.com/watch?v=Zzn9-ATB9aU",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-chimsa",
+    title: "Chìm Sâu (feat. Trung Trần)",
+    artist: "RPT MCK",
+    thumbnail: "https://i.ytimg.com/vi/Yw9Ra2UiVLw/hqdefault.jpg",
+    duration: 157,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/chim-sau-rpt-mck-ft-trung-tran.html",
+    streamUrl: "https://www.youtube.com/watch?v=Yw9Ra2UiVLw",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-bigcityboi",
+    title: "Bigcityboi",
+    artist: "Binz, Touliver",
+    thumbnail: "https://i.ytimg.com/vi/jgZkrA8E5do/hqdefault.jpg",
+    duration: 202,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/bigcityboi-binz-ft-touliver.html",
+    streamUrl: "https://www.youtube.com/watch?v=jgZkrA8E5do",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-ctcht",
+    title: "Chúng Ta Của Hiện Tại",
+    artist: "Sơn Tùng M-TP",
+    thumbnail: "https://i.ytimg.com/vi/psZ1g9fMfeo/hqdefault.jpg",
+    duration: 301,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/chung-ta-cua-hien-tai-son-tung-m-tp.html",
+    streamUrl: "https://www.youtube.com/watch?v=psZ1g9fMfeo",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-tinhdau",
+    title: "Tại Vì Sao",
+    artist: "RPT MCK",
+    thumbnail: "https://i.ytimg.com/vi/U0VR1e9b9oY/hqdefault.jpg",
+    duration: 203,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/tai-vi-sao-rpt-mck.html",
+    streamUrl: "https://www.youtube.com/watch?v=U0VR1e9b9oY",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-ok",
+    title: "OK",
+    artist: "Binz",
+    thumbnail: "https://i.ytimg.com/vi/SNES5Y-tYxM/hqdefault.jpg",
+    duration: 160,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/ok-binz.html",
+    streamUrl: "https://www.youtube.com/watch?v=SNES5Y-tYxM",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-yeunhieu",
+    title: "Đôi Mươi",
+    artist: "Hoàng Dũng",
+    thumbnail: "https://i.ytimg.com/vi/u5L3iH0w4gA/hqdefault.jpg",
+    duration: 244,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/doi-muoi-hoang-dung.html",
+    streamUrl: "https://www.youtube.com/watch?v=u5L3iH0w4gA",
+    resolvedSource: "youtube",
+  },
+  {
+    id: "nhaccuatui:vpop-lactroi",
+    title: "Lạc Trôi",
+    artist: "Sơn Tùng M-TP",
+    thumbnail: "https://i.ytimg.com/vi/Llw9Q6akRo4/hqdefault.jpg",
+    duration: 233,
+    source: "nhaccuatui",
+    sourceUrl: "https://www.nhaccuatui.com/bai-hat/lac-troi-son-tung-m-tp.html",
+    streamUrl: "https://www.youtube.com/watch?v=Llw9Q6akRo4",
+    resolvedSource: "youtube",
+  },
+];
+
+function dedupeTracks(list: UnifiedTrack[], limit: number): UnifiedTrack[] {
+  const seen = new Set<string>();
+  const out: UnifiedTrack[] = [];
+  for (const item of list) {
+    const key = item.id || `${item.source}:${item.title.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * Loads live trending / default suggested tracks for extended platforms when the user
+ * clicks a platform tab with an empty search query.
+ */
+export async function getTrendingTracksBySource(
+  source: TrackSource,
+  limit: number = 12
+): Promise<UnifiedTrack[]> {
+  if (source === "zingmp3") {
+    const settled = await Promise.allSettled(
+      VPOP_DEFAULT_SEEDS.map((seed) => zingMp3ProviderAdapter.search(seed, 4))
+    );
+    const collected: UnifiedTrack[] = [];
+    for (const res of settled) {
+      if (res.status === "fulfilled") collected.push(...res.value);
+    }
+    const deduped = dedupeTracks(collected, limit);
+    if (deduped.length > 0) return deduped;
+    return NCT_CURATED_VPOP_FALLBACK.slice(0, limit).map((t) => ({
+      ...t,
+      id: t.id.replace("nhaccuatui:", "zingmp3:"),
+      source: "zingmp3",
+    }));
+  }
+
+  if (source === "nhaccuatui") {
+    const settled = await Promise.allSettled(
+      VPOP_DEFAULT_SEEDS.map((seed) =>
+        nhacCuaTuiProviderAdapter.search(seed, 4)
+      )
+    );
+    const collected: UnifiedTrack[] = [];
+    for (const res of settled) {
+      if (res.status === "fulfilled") collected.push(...res.value);
+    }
+    const deduped = dedupeTracks(collected, limit);
+    if (deduped.length >= 6) return deduped;
+
+    // Supplement with Zing MP3 live V-Pop hits or curated V-Pop catalog tagged for seamless playback
+    return dedupeTracks([...deduped, ...NCT_CURATED_VPOP_FALLBACK], limit);
+  }
+
+  if (source === "apple_music") {
+    try {
+      const res = await fetch(
+        `https://itunes.apple.com/search?term=top+hits&media=music&entity=song&limit=${Math.min(limit, 20)}`,
+        { signal: AbortSignal.timeout(5000), cache: "no-store" }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as ITunesLookupPayload;
+        const tracks: UnifiedTrack[] = (data.results ?? [])
+          .filter((r) => Boolean(r.trackId && r.trackName))
+          .map((r) => ({
+            id: `apple_music:${r.trackId}`,
+            title: r.trackName || "Untitled",
+            artist: r.artistName || "Unknown Artist",
+            thumbnail: (r.artworkUrl100 || "").replace(/100x100bb/i, "600x600bb"),
+            duration: r.trackTimeMillis
+              ? Math.round(r.trackTimeMillis / 1000)
+              : 0,
+            source: "apple_music",
+            sourceUrl:
+              r.trackViewUrl || `https://music.apple.com/song/${r.trackId}`,
+          }));
+        if (tracks.length > 0) return dedupeTracks(tracks, limit);
+      }
+    } catch {
+      // Fall back to adapter search below
+    }
+    return appleMusicProviderAdapter.search("top hits", limit);
+  }
+
+  if (source === "audius") {
+    const trending = await audiusAdapter.getTrending(limit);
+    if (trending.length > 0) {
+      return trending.map((item) =>
+        mapCoreTrackToAppTrack(
+          item,
+          "audius",
+          `/api/providers/audius?action=stream&id=${encodeURIComponent(item.id)}`
+        )
+      );
+    }
+    return audiusProviderAdapter.search("electronic", limit);
+  }
+
+  return [];
+}
