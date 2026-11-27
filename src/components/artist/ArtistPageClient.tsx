@@ -26,6 +26,10 @@ import type {
 } from "@/lib/audio/types";
 import { ARTIST_REGION_META } from "@/lib/audio/region";
 import {
+  deduplicateArtistTracks,
+  isTrackByArtist,
+} from "@/lib/audio/artist-matcher";
+import {
   BUTTON_MOTION,
   SOURCE_THEMES,
   SPRING_PHYSICS,
@@ -72,16 +76,6 @@ function formatFollowers(count?: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
   return String(count);
-}
-
-function normalizeTitleForDedup(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s*\([^)]*\)/g, "")
-    .replace(/\s*\[[^\]]*\]/g, "")
-    .replace(/[^a-z0-9]/g, "");
 }
 
 function buildFallbackPlatformUrl(
@@ -181,8 +175,11 @@ export function ArtistPageClient({
   }, [artistName, artistId, initialSource, byokVersion]);
 
   const profile = data?.profile;
+  const artistAliases = useMemo(
+    () => profile?.aliases ?? [],
+    [profile?.aliases]
+  );
 
-  // On-demand adapter query when user selects a platform tab whose tracks are not yet loaded
   useEffect(() => {
     if (!profile || sourceFilter === "all") {
       setLoadingSource(null);
@@ -190,12 +187,14 @@ export function ArtistPageClient({
     }
 
     const initialMatches = (data?.tracks ?? []).filter(
-      (t) => t.source === sourceFilter
+      (t) =>
+        t.source === sourceFilter &&
+        isTrackByArtist(t, profile.name, artistAliases)
     );
     const cachedExtra = extraTracksBySource[sourceFilter];
     if (
       initialMatches.length > 0 ||
-      (cachedExtra && cachedExtra.length > 0) ||
+      cachedExtra !== undefined ||
       fetchedSourcesRef.current.has(sourceFilter)
     ) {
       setLoadingSource(null);
@@ -219,80 +218,51 @@ export function ArtistPageClient({
     })
       .then((res) => res.json())
       .then((res: SearchResponse) => {
-        const fetched = (res.tracks ?? []).filter(
-          (t) => t.source === targetSource
+        const matched = deduplicateArtistTracks(
+          (res.tracks ?? []).filter(
+            (t) =>
+              t.source === targetSource &&
+              isTrackByArtist(t, profile.name, artistAliases)
+          ),
+          "per-source"
         );
-        if (fetched.length > 0) {
-          setExtraTracksBySource((prev) => ({
-            ...prev,
-            [targetSource]: fetched,
-          }));
-          return;
-        }
-        // If keyword search returned empty for extended VN/global provider, load default provider feed
-        if (
-          targetSource === "zingmp3" ||
-          targetSource === "nhaccuatui" ||
-          targetSource === "apple_music" ||
-          targetSource === "audius"
-        ) {
-          return fetch(`/api/search?source=${targetSource}&region=${profile.region || "VN"}`, {
-            signal: controller.signal,
-            headers: getByokHeaders(),
-          })
-            .then((r) => r.json())
-            .then((fallbackRes: SearchResponse) => {
-              const list = (fallbackRes.tracks ?? []).filter(
-                (t) => t.source === targetSource
-              );
-              setExtraTracksBySource((prev) => ({
-                ...prev,
-                [targetSource]: list,
-              }));
-            });
-        }
+        setExtraTracksBySource((prev) => ({
+          ...prev,
+          [targetSource]: matched,
+        }));
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
+        setExtraTracksBySource((prev) => ({
+          ...prev,
+          [targetSource]: [],
+        }));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoadingSource(null);
       });
 
     return () => controller.abort();
-  }, [profile, data?.tracks, sourceFilter, extraTracksBySource]);
+  }, [profile, artistAliases, data?.tracks, sourceFilter, extraTracksBySource]);
 
   const combinedTracks = useMemo<UnifiedTrack[]>(() => {
     const base = data?.tracks ?? [];
     const extras = Object.values(extraTracksBySource).flatMap(
       (list) => list ?? []
     );
-    if (extras.length === 0) return base;
-    const seenIds = new Set(base.map((t) => t.id));
-    const merged = [...base];
-    for (const item of extras) {
-      if (!seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        merged.push(item);
-      }
-    }
-    return merged;
-  }, [data?.tracks, extraTracksBySource]);
+    const merged = [...base, ...extras];
+    const filtered = profile
+      ? merged.filter((t) => isTrackByArtist(t, profile.name, artistAliases))
+      : merged;
+    return deduplicateArtistTracks(filtered, "per-source");
+  }, [data?.tracks, extraTracksBySource, profile, artistAliases]);
 
   const displayedTracks = useMemo<UnifiedTrack[]>(() => {
     if (combinedTracks.length === 0) return [];
     if (sourceFilter !== "all") {
       return combinedTracks.filter((t) => t.source === sourceFilter);
     }
-    const seen = new Set<string>();
-    const result: UnifiedTrack[] = [];
-    for (const track of combinedTracks) {
-      const key = normalizeTitleForDedup(track.title);
-      if (key && seen.has(key)) continue;
-      if (key) seen.add(key);
-      result.push(track);
-    }
-    return result;
+    return deduplicateArtistTracks(combinedTracks, "global");
   }, [combinedTracks, sourceFilter]);
 
   const displayedAlbums = useMemo<ArtistAlbum[]>(() => {
@@ -641,15 +611,26 @@ export function ArtistPageClient({
       {sourceFilter !== "all" && loadingSource === sourceFilter ? (
         <TrackSkeleton count={5} />
       ) : displayedTracks.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-8 text-center text-xs text-zinc-400 backdrop-blur-xl">
-          Chưa tìm thấy bài hát phù hợp của{" "}
-          <strong className="text-white">{profile.name}</strong> trên{" "}
-          <strong className="text-white">
-            {sourceFilter === "all"
-              ? "các nền tảng"
-              : SOURCE_THEMES[sourceFilter].label}
-          </strong>
-          . Hãy thử chọn &ldquo;Tất cả nền tảng&rdquo;.
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/40 p-8 text-center text-xs text-zinc-400 backdrop-blur-xl">
+          <p>
+            Chưa có bài hát nào của{" "}
+            <strong className="text-white">{profile.name}</strong> trên{" "}
+            <strong className="text-white">
+              {sourceFilter === "all"
+                ? "các nền tảng hiện tại"
+                : SOURCE_THEMES[sourceFilter].label}
+            </strong>
+            .
+          </p>
+          {sourceFilter !== "all" && (
+            <button
+              type="button"
+              onClick={() => setSourceFilter("all")}
+              className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
+            >
+              Quay lại Tất cả nền tảng
+            </button>
+          )}
         </div>
       ) : (
         <motion.div

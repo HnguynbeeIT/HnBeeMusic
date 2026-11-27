@@ -3,6 +3,7 @@ import type { ArtistRegion } from "@/lib/audio/region";
 export interface VerifiedArtistConfig {
   id: string;
   aliases: string[];
+  trackAliases?: string[];
   displayName: string;
   verified: boolean;
   featured?: boolean;
@@ -47,6 +48,7 @@ export const VERIFIED_ARTISTS: VerifiedArtistConfig[] = [
   {
     id: "verified:guyn",
     aliases: ["guyn", "guyn official", "guyn offical", "hnbeestudio", "bee"],
+    trackAliases: ["Guyn", "Guyn Official", "Guyn Offical", "Guyn Music", "HnBeeStudio"],
     displayName: "Guyn",
     verified: true,
     featured: true,

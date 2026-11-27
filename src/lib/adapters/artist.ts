@@ -1,5 +1,9 @@
 import type { TrackSource, UnifiedTrack } from "@/lib/audio/types";
 import { parseISO8601Duration, upgradeThumbnail } from "@/lib/audio/normalize";
+import {
+  deduplicateArtistTracks,
+  isTrackByArtist,
+} from "@/lib/audio/artist-matcher";
 import type { ArtistRegion } from "@/lib/audio/region";
 import { classifyArtistRegion } from "@/lib/region-classifier";
 import { searchYouTube } from "@/lib/adapters/youtube";
@@ -27,6 +31,7 @@ export interface ArtistAlbum {
 export interface ArtistProfile {
   id: string;
   name: string;
+  aliases?: string[];
   avatar: string;
   banner?: string;
   bio?: string;
@@ -127,12 +132,6 @@ function normalizeName(str: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
-/**
- * Strict artist name normalizer:
- * Strips platform suffixes (Official, Music, VEVO, Channel, - Topic),
- * lowercases, and collapses whitespace — preserving hyphens/letters so
- * "Guyn" NEVER matches "Guy", "Guy-N", or "GUYGEEGEE".
- */
 function normalizeArtistStrict(raw: string): string {
   return raw
     .trim()
@@ -142,16 +141,6 @@ function normalizeArtistStrict(raw: string): string {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function normalizeTrackTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s*\([^)]*(?:official|audio|video|mv|lyric|feat\.|ft\.|prod\.)[^)]*\)/gi, "")
-    .replace(/\s*\[[^\]]*\]/g, "")
-    .replace(/[^a-z0-9]/g, "");
 }
 
 async function getSpotifyToken(
@@ -639,14 +628,13 @@ async function fetchYouTubeArtistData(
       const rawLower = name.trim().toLowerCase();
       const targetStrict = normalizeArtistStrict(name);
 
-      // Prefer exact channel title match (e.g. "Guyn Official"), then strict normalized match
       const best =
         items.find((c) => c.snippet?.title?.trim().toLowerCase() === rawLower) ||
         items.find(
           (c) =>
             normalizeArtistStrict(c.snippet?.title || "") === targetStrict
         ) ||
-        items[0];
+        null;
 
       const channelId = best?.id?.channelId;
       if (channelId) {
@@ -692,22 +680,31 @@ async function fetchYouTubeArtistData(
   }
 }
 
-function filterArtistExtendedTracks(
+function buildArtistMatchAliases(
+  effectiveName: string,
+  candidates: Array<string | undefined | null>
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const raw of [effectiveName, ...candidates]) {
+    const cleaned = (raw || "").trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+  }
+
+  return result;
+}
+
+function filterTracksStrictlyByArtist(
   artistName: string,
-  tracks: UnifiedTrack[]
+  aliases: readonly string[],
+  tracks: readonly UnifiedTrack[]
 ): UnifiedTrack[] {
-  const normArtist = normalizeName(artistName);
-  if (!normArtist) return tracks;
-  const matched = tracks.filter((t) => {
-    const normTrackArtist = normalizeName(t.artist);
-    const normTrackTitle = normalizeName(t.title);
-    return (
-      normTrackArtist.includes(normArtist) ||
-      normArtist.includes(normTrackArtist) ||
-      normTrackTitle.includes(normArtist)
-    );
-  });
-  return matched.length > 0 ? matched : tracks.slice(0, 4);
+  return tracks.filter((track) => isTrackByArtist(track, artistName, aliases));
 }
 
 export async function fetchUnifiedArtist(params: {
@@ -786,18 +783,54 @@ export async function fetchUnifiedArtist(params: {
       : Promise.resolve([]),
   ]);
 
-  const zingTracks = filterArtistExtendedTracks(effectiveName, rawZingTracks);
-  const nctTracks = filterArtistExtendedTracks(effectiveName, rawNctTracks);
-  const appleTracks = filterArtistExtendedTracks(effectiveName, rawAppleTracks);
-  const audiusTracks = filterArtistExtendedTracks(
+  const artistAliases = buildArtistMatchAliases(effectiveName, [
+    ...(verifiedArtist?.trackAliases ?? []),
+    queryName,
+    spData.artist?.name,
+    ytData.channel?.title,
+    scData.user?.username,
+  ]);
+
+  const spTracks = filterTracksStrictlyByArtist(
     effectiveName,
+    artistAliases,
+    spData.tracks
+  );
+  const scTracks = filterTracksStrictlyByArtist(
+    effectiveName,
+    artistAliases,
+    scData.tracks
+  );
+  const ytTracks = filterTracksStrictlyByArtist(
+    effectiveName,
+    artistAliases,
+    ytData.tracks
+  );
+  const zingTracks = filterTracksStrictlyByArtist(
+    effectiveName,
+    artistAliases,
+    rawZingTracks
+  );
+  const nctTracks = filterTracksStrictlyByArtist(
+    effectiveName,
+    artistAliases,
+    rawNctTracks
+  );
+  const appleTracks = filterTracksStrictlyByArtist(
+    effectiveName,
+    artistAliases,
+    rawAppleTracks
+  );
+  const audiusTracks = filterTracksStrictlyByArtist(
+    effectiveName,
+    artistAliases,
     rawAudiusTracks
   );
 
   const sourcesFound: TrackSource[] = [];
-  if (spData.artist || spData.tracks.length > 0) sourcesFound.push("spotify");
-  if (ytData.channel || ytData.tracks.length > 0) sourcesFound.push("youtube");
-  if (scData.user || scData.tracks.length > 0) sourcesFound.push("soundcloud");
+  if (spData.artist || spTracks.length > 0) sourcesFound.push("spotify");
+  if (ytData.channel || ytTracks.length > 0) sourcesFound.push("youtube");
+  if (scData.user || scTracks.length > 0) sourcesFound.push("soundcloud");
   if (zingTracks.length > 0) sourcesFound.push("zingmp3");
   if (nctTracks.length > 0) sourcesFound.push("nhaccuatui");
   if (appleTracks.length > 0) sourcesFound.push("apple_music");
@@ -834,11 +867,11 @@ export async function fetchUnifiedArtist(params: {
     scAvatar ||
     ytAvatar ||
     verifiedArtist?.defaultAvatar ||
-    spData.tracks[0]?.thumbnail ||
-    ytData.tracks[0]?.thumbnail ||
+    spTracks[0]?.thumbnail ||
+    ytTracks[0]?.thumbnail ||
     zingTracks[0]?.thumbnail ||
     appleTracks[0]?.thumbnail ||
-    scData.tracks[0]?.thumbnail ||
+    scTracks[0]?.thumbnail ||
     audiusTracks[0]?.thumbnail ||
     "";
 
@@ -874,10 +907,10 @@ export async function fetchUnifiedArtist(params: {
   const finalGenres =
     verifiedArtist?.genres ?? spData.artist?.genres?.slice(0, 4) ?? [];
   const sampleTitles = [
-    ...spData.tracks.map((t) => t.title),
+    ...spTracks.map((t) => t.title),
     ...spData.albums.map((a) => a.title),
-    ...ytData.tracks.map((t) => t.title),
-    ...scData.tracks.map((t) => t.title),
+    ...ytTracks.map((t) => t.title),
+    ...scTracks.map((t) => t.title),
     ...zingTracks.map((t) => t.title),
     ...appleTracks.map((t) => t.title),
   ];
@@ -897,6 +930,7 @@ export async function fetchUnifiedArtist(params: {
       (scData.user ? `sc:${scData.user.id}` : "") ||
       `artist:${normalizeName(queryName)}`,
     name: displayName,
+    aliases: artistAliases,
     avatar,
     banner,
     bio: verifiedArtist?.bio,
@@ -911,7 +945,7 @@ export async function fetchUnifiedArtist(params: {
     verified: Boolean(
       verifiedArtist?.verified ||
         (spData.artist &&
-          (spData.albums.length > 0 || spData.tracks.length > 0)) ||
+          (spData.albums.length > 0 || spTracks.length > 0)) ||
         (spData.artist && ytData.channel) ||
         scData.user?.verified ||
         (ytData.channel?.subscribers ?? 0) > 10000
@@ -923,31 +957,23 @@ export async function fetchUnifiedArtist(params: {
   };
 
   const rawCombined = [
-    ...spData.tracks,
+    ...spTracks,
     ...zingTracks,
-    ...ytData.tracks,
+    ...ytTracks,
     ...appleTracks,
     ...nctTracks,
-    ...scData.tracks,
+    ...scTracks,
     ...audiusTracks,
   ];
-  const seenPerSource = new Set<string>();
-  const tracks: UnifiedTrack[] = [];
+  const tracks = deduplicateArtistTracks(rawCombined, "per-source");
 
-  for (const t of rawCombined) {
-    const key = `${t.source}:${normalizeTrackTitle(t.title)}`;
-    if (seenPerSource.has(key)) continue;
-    seenPerSource.add(key);
-    tracks.push(t);
-  }
-
-  // Fallback catalog check if no API keys / offline
   if (tracks.length === 0) {
-    const target = normalizeName(queryName);
-    const fallbackMatches = FALLBACK_CATALOG.filter((t) =>
-      normalizeName(t.artist).includes(target)
+    const fallbackMatches = filterTracksStrictlyByArtist(
+      displayName,
+      artistAliases,
+      FALLBACK_CATALOG
     );
-    tracks.push(...fallbackMatches);
+    tracks.push(...deduplicateArtistTracks(fallbackMatches, "per-source"));
   }
 
   const albums = [...spData.albums, ...scData.albums];
