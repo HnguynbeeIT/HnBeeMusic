@@ -72,10 +72,18 @@ export async function POST(request: NextRequest) {
       clientSecret: spSecretHeader,
     };
 
-    // Mode 1: Lazy Stream Matching for Spotify / Apple Music tracks OR SoundCloud 30s Go+ SNIPPET tracks
+    // Mode 1: Lazy Stream Matching / Fallback Bridge for Spotify, Apple Music, Zing MP3, NhacCuaTui, Audius & SoundCloud snippets
     if (body.matchTrack) {
       const t = body.matchTrack;
-      if (t.source !== "spotify" && t.source !== "apple_music" && !t.isSnippet) {
+      const supportsBridge =
+        t.source === "spotify" ||
+        t.source === "apple_music" ||
+        t.source === "zingmp3" ||
+        t.source === "nhaccuatui" ||
+        t.source === "audius" ||
+        Boolean(t.isSnippet);
+
+      if (!supportsBridge) {
         return NextResponse.json({ track: t });
       }
       if (t.source === "soundcloud" && t.isSnippet) {
@@ -86,8 +94,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ track: matched });
       }
       let matched: UnifiedTrack = t;
-      if (ytHeader || t.source === "apple_music") {
-        matched = await matchSpotifyTrackToAudio(t, byokCredentials);
+      if (ytHeader || t.source !== "spotify") {
+        matched = await matchSpotifyTrackToAudio(
+          { ...t, streamUrl: undefined, resolvedSource: undefined },
+          byokCredentials
+        );
       } else {
         try {
           matched = await cachedLazyMatch(
@@ -103,7 +114,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Apple Music / V-Pop fallback bridge -> Zing MP3 full audio when YouTube/SoundCloud missed
       if (!matched.streamUrl && t.source === "apple_music") {
         const zingCandidates = await zingMp3ProviderAdapter.search(
           `${t.title} ${t.artist}`,

@@ -14,6 +14,20 @@ import type {
 } from "@/lib/audio/types";
 import type { UnifiedTrack as CoreUnifiedTrack } from "@/types/audio";
 
+function buildProviderStreamUrl(
+  provider: "zingmp3" | "nhaccuatui" | "audius",
+  core: CoreUnifiedTrack
+): string {
+  const params = new URLSearchParams({
+    action: "stream",
+    id: core.id,
+  });
+  if (core.title) params.set("title", core.title);
+  if (core.artists.length > 0) params.set("artist", core.artists.join(", "));
+  if (core.duration > 0) params.set("duration", String(core.duration));
+  return `/api/providers/${provider}?${params.toString()}`;
+}
+
 function mapCoreTrackToAppTrack(
   core: CoreUnifiedTrack,
   sourceOverride: TrackSource,
@@ -48,7 +62,7 @@ export const zingMp3ProviderAdapter: AudioAdapter = {
       mapCoreTrackToAppTrack(
         item,
         "zingmp3",
-        `/api/providers/zingmp3?action=stream&id=${encodeURIComponent(item.id)}`
+        buildProviderStreamUrl("zingmp3", item)
       )
     );
   },
@@ -66,7 +80,7 @@ export const zingMp3ProviderAdapter: AudioAdapter = {
           mapCoreTrackToAppTrack(
             item,
             "zingmp3",
-            `/api/providers/zingmp3?action=stream&id=${encodeURIComponent(item.id)}`
+            buildProviderStreamUrl("zingmp3", item)
           )
         ),
       };
@@ -81,7 +95,7 @@ export const zingMp3ProviderAdapter: AudioAdapter = {
         mapCoreTrackToAppTrack(
           single,
           "zingmp3",
-          `/api/providers/zingmp3?action=stream&id=${encodeURIComponent(single.id)}`
+          buildProviderStreamUrl("zingmp3", single)
         ),
       ],
     };
@@ -114,7 +128,7 @@ export const nhacCuaTuiProviderAdapter: AudioAdapter = {
       mapCoreTrackToAppTrack(
         item,
         "nhaccuatui",
-        `/api/providers/nhaccuatui?action=stream&id=${encodeURIComponent(item.id)}`
+        buildProviderStreamUrl("nhaccuatui", item)
       )
     );
   },

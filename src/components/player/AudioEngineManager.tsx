@@ -171,6 +171,8 @@ export function AudioEngineManager() {
   const prevEngineRef = useRef<ActiveEngine>(null);
   const matchingIdsRef = useRef<Set<string>>(new Set());
   const ytFallbackAttemptedRef = useRef<Set<string>>(new Set());
+  const providerBridgeAttemptedRef = useRef<Set<string>>(new Set());
+  const autoSkipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iosAudioRetriedRef = useRef<Set<string>>(new Set());
   // Tracks which trackId successfully started playing via /api/audio-proxy on iOS (clears 4s fallback watchdog)
   const iosProxyPlayingIdRef = useRef<string | null>(null);
@@ -304,6 +306,7 @@ export function AudioEngineManager() {
   useEffect(() => {
     return () => {
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      if (autoSkipTimerRef.current) clearTimeout(autoSkipTimerRef.current);
     };
   }, []);
 
@@ -1450,9 +1453,128 @@ export function AudioEngineManager() {
   const handleHtml5Error = useCallback(() => {
     if (!currentTrack) return;
 
-    // On iOS, if `/api/audio-proxy` returns HTTP >= 400 or stops mid-stream, seamlessly fall back
-    // to YouTube IFrame Player preserving current progress — NEVER show error or auto-skip!
+    const triggerProviderFallbackBridge = (): boolean => {
+      const isBridgeableProvider =
+        currentTrack.source === "zingmp3" ||
+        currentTrack.source === "nhaccuatui" ||
+        currentTrack.source === "audius" ||
+        Boolean(currentTrack.streamUrl?.startsWith("/api/providers/"));
+
+      if (
+        !isBridgeableProvider ||
+        providerBridgeAttemptedRef.current.has(currentTrack.id)
+      ) {
+        return false;
+      }
+
+      providerBridgeAttemptedRef.current.add(currentTrack.id);
+      const targetTrack = currentTrack;
+      const reqId = playRequestIdRef.current;
+
+      setPlaybackError(null);
+      setIsLoading(true);
+
+      const cached = getCachedStream(targetTrack.id);
+      if (cached?.streamUrl && cached?.resolvedSource) {
+        updateTrackInStore({
+          ...targetTrack,
+          streamUrl: cached.streamUrl,
+          resolvedSource: cached.resolvedSource,
+          matchedTitle: cached.matchedTitle,
+          matchScore: cached.matchScore,
+        });
+        return true;
+      }
+
+      fetch("/api/resolve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getByokHeaders(),
+        },
+        body: JSON.stringify({
+          matchTrack: {
+            ...targetTrack,
+            streamUrl: undefined,
+            resolvedSource: undefined,
+          },
+        }),
+      })
+        .then((res) => res.json())
+        .then((data: { track?: typeof targetTrack }) => {
+          if (reqId !== playRequestIdRef.current) return;
+          if (data.track?.streamUrl && data.track?.resolvedSource) {
+            const ytId =
+              data.track.resolvedSource === "youtube"
+                ? extractYouTubeId(data.track.streamUrl) || undefined
+                : undefined;
+            setCachedStream(targetTrack.id, {
+              youtubeId: ytId,
+              streamUrl: data.track.streamUrl,
+              resolvedSource: data.track.resolvedSource,
+              matchedTitle: data.track.matchedTitle,
+              matchScore: data.track.matchScore,
+            });
+            updateTrackInStore({
+              ...targetTrack,
+              streamUrl: data.track.streamUrl,
+              resolvedSource: data.track.resolvedSource,
+              matchedTitle: data.track.matchedTitle,
+              matchScore: data.track.matchScore,
+            });
+          } else {
+            setIsLoading(false);
+            if (queue.length > 1) {
+              setPlaybackError(
+                "Bài hát tạm thời không khả dụng — đang chuyển sang bài tiếp theo..."
+              );
+              if (autoSkipTimerRef.current) {
+                clearTimeout(autoSkipTimerRef.current);
+              }
+              autoSkipTimerRef.current = setTimeout(() => {
+                if (reqId === playRequestIdRef.current) {
+                  setPlaybackError(null);
+                  playNext(false);
+                }
+              }, 1200);
+            } else {
+              setIsPlaying(false);
+              setPlaybackError(
+                "Bài hát tạm thời không khả dụng trên nguồn phát này."
+              );
+            }
+          }
+        })
+        .catch(() => {
+          if (reqId !== playRequestIdRef.current) return;
+          setIsLoading(false);
+          if (queue.length > 1) {
+            setPlaybackError(
+              "Không thể kết nối luồng phát — đang chuyển sang bài tiếp theo..."
+            );
+            if (autoSkipTimerRef.current) {
+              clearTimeout(autoSkipTimerRef.current);
+            }
+            autoSkipTimerRef.current = setTimeout(() => {
+              if (reqId === playRequestIdRef.current) {
+                setPlaybackError(null);
+                playNext(false);
+              }
+            }, 1200);
+          } else {
+            setIsPlaying(false);
+            setPlaybackError("Không thể kết nối luồng âm thanh cho bài hát này.");
+          }
+        });
+
+      return true;
+    };
+
     if (isIOS) {
+      if (triggerProviderFallbackBridge()) {
+        return;
+      }
+
       const currentPos = usePlaybackTimeStore.getState().progress;
       if (Number.isFinite(currentPos) && currentPos > 2) {
         pendingIosResumeRef.current = {
@@ -1494,14 +1616,24 @@ export function AudioEngineManager() {
         return;
       }
       if (queue.length > 1) {
-        playNext(false);
+        setPlaybackError(
+          "Bài hát tạm thời không khả dụng — đang chuyển sang bài tiếp theo..."
+        );
+        if (autoSkipTimerRef.current) clearTimeout(autoSkipTimerRef.current);
+        const reqId = playRequestIdRef.current;
+        autoSkipTimerRef.current = setTimeout(() => {
+          if (reqId === playRequestIdRef.current) {
+            setPlaybackError(null);
+            playNext(false);
+          }
+        }, 1200);
       } else {
-        setPlaybackError("Không thể phát nguồn âm thanh cho bài hát này.");
+        setIsPlaying(false);
+        setPlaybackError("Bài hát tạm thời không khả dụng trên nguồn phát này.");
       }
       return;
     }
 
-    // Desktop / Android: if a YouTube clean-audio override URL failed/expired, revert cleanly
     if (cleanAudioOverrides[currentTrack.id]) {
       setCleanAudioOverrides((prev) => {
         const next = { ...prev };
@@ -1511,13 +1643,30 @@ export function AudioEngineManager() {
       return;
     }
 
+    if (triggerProviderFallbackBridge()) {
+      return;
+    }
+
     if (
       currentTrack.source === "soundcloud" ||
       currentTrack.resolvedSource === "soundcloud"
     ) {
       setScWidgetFallbackIds((prev) => new Set(prev).add(currentTrack.id));
+    } else if (queue.length > 1) {
+      setPlaybackError(
+        "Bài hát tạm thời không khả dụng — đang chuyển sang bài tiếp theo..."
+      );
+      if (autoSkipTimerRef.current) clearTimeout(autoSkipTimerRef.current);
+      const reqId = playRequestIdRef.current;
+      autoSkipTimerRef.current = setTimeout(() => {
+        if (reqId === playRequestIdRef.current) {
+          setPlaybackError(null);
+          playNext(false);
+        }
+      }, 1200);
     } else {
-      setPlaybackError("Không thể phát luồng âm thanh trực tiếp này.");
+      setIsPlaying(false);
+      setPlaybackError("Bài hát tạm thời không khả dụng trên nguồn phát này.");
     }
   }, [
     isIOS,
@@ -1525,7 +1674,10 @@ export function AudioEngineManager() {
     currentTrack,
     queue.length,
     playNext,
+    setIsLoading,
+    setIsPlaying,
     setPlaybackError,
+    updateTrackInStore,
   ]);
 
   return (

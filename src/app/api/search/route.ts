@@ -152,7 +152,7 @@ const runCachedProviderTrending = unstable_cache(
   async (source: TrackSource) => {
     return getTrendingTracksBySource(source, 12);
   },
-  ["hnbee-provider-trending-v1"],
+  ["hnbee-provider-trending-v2"],
   { revalidate: 900 }
 );
 
