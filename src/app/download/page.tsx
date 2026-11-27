@@ -19,10 +19,10 @@ import {
 import { BUTTON_MOTION } from "@/lib/ui/source-theme";
 import { BrandLogo } from "@/components/BrandLogo";
 
-const RELEASES_LATEST_URL =
-  "https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest";
 const WINDOWS_SETUP_URL =
   "https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest/download/HnBee-Music-Setup.exe";
+const WINDOWS_PORTABLE_URL =
+  "https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest/download/HnBee-Music-Portable.exe";
 
 const DESKTOP_BENEFITS = [
   {
@@ -79,7 +79,7 @@ export default function DownloadPage() {
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-[11px] text-zinc-300">
                 <Monitor className="h-3.5 w-3.5 text-sky-400" />
-                Windows 10/11 64-bit &bull; ~78 MB
+                Windows 10/11 64-bit &bull; 87.4 MB
               </span>
             </div>
 
@@ -107,13 +107,13 @@ export default function DownloadPage() {
               </motion.a>
 
               <motion.a
-                href={RELEASES_LATEST_URL}
+                href={WINDOWS_PORTABLE_URL}
                 target="_blank"
                 rel="noreferrer"
                 {...BUTTON_MOTION}
                 className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-3 text-xs font-semibold text-zinc-200 backdrop-blur-md hover:bg-white/15 hover:text-white"
               >
-                <span>Xem GitHub Releases (Bản Portable)</span>
+                <span>Tải bản Portable (Chạy ngay)</span>
                 <ExternalLink className="h-3.5 w-3.5" />
               </motion.a>
             </div>
@@ -133,7 +133,7 @@ export default function DownloadPage() {
               </p>
               <p className="flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>Dung lượng dự kiến: ~78 MB</span>
+                <span>Dung lượng thực tế: 87.4 MB</span>
               </p>
             </div>
           </div>
