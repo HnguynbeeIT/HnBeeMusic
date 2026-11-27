@@ -6,6 +6,12 @@ import { searchYouTube } from "@/lib/adapters/youtube";
 import { getSoundCloudClientId } from "@/lib/adapters/soundcloud";
 import { FALLBACK_CATALOG } from "@/lib/adapters/fallback-catalog";
 import { findVerifiedArtist } from "@/config/verified-artists";
+import {
+  appleMusicProviderAdapter,
+  audiusProviderAdapter,
+  nhacCuaTuiProviderAdapter,
+  zingMp3ProviderAdapter,
+} from "@/lib/adapters/extended-providers";
 
 export interface ArtistAlbum {
   id: string;
@@ -686,6 +692,24 @@ async function fetchYouTubeArtistData(
   }
 }
 
+function filterArtistExtendedTracks(
+  artistName: string,
+  tracks: UnifiedTrack[]
+): UnifiedTrack[] {
+  const normArtist = normalizeName(artistName);
+  if (!normArtist) return tracks;
+  const matched = tracks.filter((t) => {
+    const normTrackArtist = normalizeName(t.artist);
+    const normTrackTitle = normalizeName(t.title);
+    return (
+      normTrackArtist.includes(normArtist) ||
+      normArtist.includes(normTrackArtist) ||
+      normTrackTitle.includes(normArtist)
+    );
+  });
+  return matched.length > 0 ? matched : tracks.slice(0, 4);
+}
+
 export async function fetchUnifiedArtist(params: {
   name: string;
   id?: string;
@@ -697,7 +721,6 @@ export async function fetchUnifiedArtist(params: {
   const sourceFilter = params.source ?? "all";
   const preferredSource = params.preferredSource;
 
-  // Check Verified Artists registry first for locked platform IDs
   const verifiedArtist = findVerifiedArtist(queryName, params.id);
   const effectiveName = verifiedArtist?.displayName || queryName;
   const effectiveSpotifyId =
@@ -708,8 +731,22 @@ export async function fetchUnifiedArtist(params: {
   const wantSp = sourceFilter === "all" || sourceFilter === "spotify";
   const wantSc = sourceFilter === "all" || sourceFilter === "soundcloud";
   const wantYt = sourceFilter === "all" || sourceFilter === "youtube";
+  const wantZing = sourceFilter === "all" || sourceFilter === "zingmp3";
+  const wantNct = sourceFilter === "all" || sourceFilter === "nhaccuatui";
+  const wantApple = sourceFilter === "all" || sourceFilter === "apple_music";
+  const wantAudius = sourceFilter === "all" || sourceFilter === "audius";
 
-  const [spData, scData, ytData] = await Promise.all([
+  const extLimit = sourceFilter === "all" ? 8 : 12;
+
+  const [
+    spData,
+    scData,
+    ytData,
+    rawZingTracks,
+    rawNctTracks,
+    rawAppleTracks,
+    rawAudiusTracks,
+  ] = await Promise.all([
     wantSp
       ? fetchSpotifyArtistData(
           effectiveName,
@@ -731,15 +768,41 @@ export async function fetchUnifiedArtist(params: {
           lockedYtHandle
         )
       : Promise.resolve({ channel: null, tracks: [] }),
+    wantZing
+      ? zingMp3ProviderAdapter.search(effectiveName, extLimit).catch(() => [])
+      : Promise.resolve([]),
+    wantNct
+      ? nhacCuaTuiProviderAdapter
+          .search(effectiveName, extLimit)
+          .catch(() => [])
+      : Promise.resolve([]),
+    wantApple
+      ? appleMusicProviderAdapter
+          .search(effectiveName, extLimit)
+          .catch(() => [])
+      : Promise.resolve([]),
+    wantAudius
+      ? audiusProviderAdapter.search(effectiveName, extLimit).catch(() => [])
+      : Promise.resolve([]),
   ]);
+
+  const zingTracks = filterArtistExtendedTracks(effectiveName, rawZingTracks);
+  const nctTracks = filterArtistExtendedTracks(effectiveName, rawNctTracks);
+  const appleTracks = filterArtistExtendedTracks(effectiveName, rawAppleTracks);
+  const audiusTracks = filterArtistExtendedTracks(
+    effectiveName,
+    rawAudiusTracks
+  );
 
   const sourcesFound: TrackSource[] = [];
   if (spData.artist || spData.tracks.length > 0) sourcesFound.push("spotify");
   if (ytData.channel || ytData.tracks.length > 0) sourcesFound.push("youtube");
   if (scData.user || scData.tracks.length > 0) sourcesFound.push("soundcloud");
+  if (zingTracks.length > 0) sourcesFound.push("zingmp3");
+  if (nctTracks.length > 0) sourcesFound.push("nhaccuatui");
+  if (appleTracks.length > 0) sourcesFound.push("apple_music");
+  if (audiusTracks.length > 0) sourcesFound.push("audius");
 
-  // Determine primary profile source honoring preferredSource (e.g. ?source=youtube)
-  // and falling back cleanly when Spotify has no 100% exact match
   const scAvatar =
     scData.user?.avatar_url && !scData.user.avatar_url.includes("default_avatar")
       ? upgradeThumbnail(scData.user.avatar_url, "soundcloud")
@@ -747,7 +810,6 @@ export async function fetchUnifiedArtist(params: {
   const spAvatar = spData.artist?.images?.[0]?.url || "";
   const ytAvatar = ytData.channel?.avatar || "";
 
-  // Prefer Spotify official artist profile when 100% exact-matched (unifies Spotify + YouTube Official Artist Channel)
   let primarySource: TrackSource = "youtube";
   if (spData.artist) {
     primarySource = "spotify";
@@ -759,6 +821,10 @@ export async function fetchUnifiedArtist(params: {
     primarySource = "youtube";
   } else if (scData.user) {
     primarySource = "soundcloud";
+  } else if (zingTracks.length > 0) {
+    primarySource = "zingmp3";
+  } else if (appleTracks.length > 0) {
+    primarySource = "apple_music";
   } else if (preferredSource) {
     primarySource = preferredSource;
   }
@@ -770,38 +836,40 @@ export async function fetchUnifiedArtist(params: {
     verifiedArtist?.defaultAvatar ||
     spData.tracks[0]?.thumbnail ||
     ytData.tracks[0]?.thumbnail ||
+    zingTracks[0]?.thumbnail ||
+    appleTracks[0]?.thumbnail ||
     scData.tracks[0]?.thumbnail ||
+    audiusTracks[0]?.thumbnail ||
     "";
 
-  const banner =
-    scData.user?.visuals?.visuals?.[0]?.visual_url ||
-    avatar;
+  const banner = scData.user?.visuals?.visuals?.[0]?.visual_url || avatar;
 
-  const externalUrls: Partial<Record<TrackSource, string>> = {};
-  if (verifiedArtist?.platforms.spotify?.url) {
-    externalUrls.spotify = verifiedArtist.platforms.spotify.url;
-  } else if (spData.artist?.external_urls?.spotify) {
-    externalUrls.spotify = spData.artist.external_urls.spotify;
-  }
-
-  if (verifiedArtist?.platforms.youtube?.url) {
-    externalUrls.youtube = verifiedArtist.platforms.youtube.url;
-  } else if (ytData.channel?.id) {
-    externalUrls.youtube = `https://www.youtube.com/channel/${ytData.channel.id}`;
-  }
-
-  if (verifiedArtist?.platforms.soundcloud?.url) {
-    externalUrls.soundcloud = verifiedArtist.platforms.soundcloud.url;
-  } else if (scData.user?.permalink_url) {
-    externalUrls.soundcloud = scData.user.permalink_url;
-  }
-
-  // Canonical unified artist display name
   const displayName =
     verifiedArtist?.displayName ||
     (spData.artist && spData.artist.name) ||
     queryName.replace(/\s+\b(official|offical)\b$/i, "").trim() ||
     queryName;
+
+  const encodedArtist = encodeURIComponent(displayName);
+  const externalUrls: Partial<Record<TrackSource, string>> = {
+    spotify:
+      verifiedArtist?.platforms.spotify?.url ||
+      spData.artist?.external_urls?.spotify ||
+      `https://open.spotify.com/search/${encodedArtist}`,
+    youtube:
+      verifiedArtist?.platforms.youtube?.url ||
+      (ytData.channel?.id
+        ? `https://www.youtube.com/channel/${ytData.channel.id}`
+        : `https://www.youtube.com/results?search_query=${encodedArtist}`),
+    soundcloud:
+      verifiedArtist?.platforms.soundcloud?.url ||
+      scData.user?.permalink_url ||
+      `https://soundcloud.com/search?q=${encodedArtist}`,
+    zingmp3: `https://zingmp3.vn/tim-kiem/tat-ca?q=${encodedArtist}`,
+    nhaccuatui: `https://www.nhaccuatui.com/tim-kiem?q=${encodedArtist}`,
+    apple_music: `https://music.apple.com/vn/search?term=${encodedArtist}`,
+    audius: `https://audius.co/search/${encodedArtist}`,
+  };
 
   const finalGenres =
     verifiedArtist?.genres ?? spData.artist?.genres?.slice(0, 4) ?? [];
@@ -810,6 +878,8 @@ export async function fetchUnifiedArtist(params: {
     ...spData.albums.map((a) => a.title),
     ...ytData.tracks.map((t) => t.title),
     ...scData.tracks.map((t) => t.title),
+    ...zingTracks.map((t) => t.title),
+    ...appleTracks.map((t) => t.title),
   ];
   const detectedRegion = classifyArtistRegion({
     name: displayName,
@@ -852,8 +922,15 @@ export async function fetchUnifiedArtist(params: {
     wikiUrl: verifiedArtist?.platforms.wiki,
   };
 
-  // Deduplicate tracks per (source + normalizedTitle) so each platform tab stays rich
-  const rawCombined = [...spData.tracks, ...ytData.tracks, ...scData.tracks];
+  const rawCombined = [
+    ...spData.tracks,
+    ...zingTracks,
+    ...ytData.tracks,
+    ...appleTracks,
+    ...nctTracks,
+    ...scData.tracks,
+    ...audiusTracks,
+  ];
   const seenPerSource = new Set<string>();
   const tracks: UnifiedTrack[] = [];
 

@@ -20,28 +20,33 @@ const getCachedArtist = unstable_cache(
       preferredSource: preferredSource || undefined,
     });
   },
-  ["hnbee-unified-artist-v7"],
+  ["hnbee-unified-artist-v8"],
   { revalidate: 1800 }
 );
+
+const VALID_ARTIST_SOURCES = new Set<TrackSource>([
+  "spotify",
+  "youtube",
+  "soundcloud",
+  "zingmp3",
+  "nhaccuatui",
+  "apple_music",
+  "audius",
+]);
+
+function parseTrackSourceParam(raw: string): TrackSource | null {
+  const lower = raw.toLowerCase() as TrackSource;
+  return VALID_ARTIST_SOURCES.has(lower) ? lower : null;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const name = (searchParams.get("name") || "").trim();
   const id = (searchParams.get("id") || "").trim();
-  const rawSource = (searchParams.get("source") || "all").toLowerCase();
   const source: "all" | TrackSource =
-    rawSource === "spotify" ||
-    rawSource === "youtube" ||
-    rawSource === "soundcloud"
-      ? rawSource
-      : "all";
-  const rawPreferred = (searchParams.get("preferredSource") || "").toLowerCase();
+    parseTrackSourceParam(searchParams.get("source") || "") ?? "all";
   const preferredSource: TrackSource | "" =
-    rawPreferred === "spotify" ||
-    rawPreferred === "youtube" ||
-    rawPreferred === "soundcloud"
-      ? rawPreferred
-      : "";
+    parseTrackSourceParam(searchParams.get("preferredSource") || "") ?? "";
 
   if (!name && !id) {
     return NextResponse.json(

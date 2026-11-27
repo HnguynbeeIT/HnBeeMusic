@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BadgeCheck,
@@ -18,10 +18,16 @@ import type {
   ArtistAlbum,
   UnifiedArtistResponse,
 } from "@/lib/adapters/artist";
-import type { ResolveResponse, TrackSource, UnifiedTrack } from "@/lib/audio/types";
+import type {
+  ResolveResponse,
+  SearchResponse,
+  TrackSource,
+  UnifiedTrack,
+} from "@/lib/audio/types";
 import { ARTIST_REGION_META } from "@/lib/audio/region";
 import {
   BUTTON_MOTION,
+  SOURCE_THEMES,
   SPRING_PHYSICS,
   getSourceTheme,
 } from "@/lib/ui/source-theme";
@@ -35,11 +41,25 @@ import { SourceBadge } from "@/components/track/SourceBadge";
 
 type FilterValue = "all" | TrackSource;
 
+const ALL_PLATFORMS: readonly TrackSource[] = [
+  "spotify",
+  "youtube",
+  "soundcloud",
+  "zingmp3",
+  "nhaccuatui",
+  "apple_music",
+  "audius",
+] as const;
+
 const SOURCE_TABS: Array<{ id: FilterValue; label: string; dotClass?: string }> = [
   { id: "all", label: "Tất cả nền tảng" },
   { id: "spotify", label: "Spotify", dotClass: "bg-[#1DB954]" },
   { id: "youtube", label: "YouTube", dotClass: "bg-[#FF0000]" },
   { id: "soundcloud", label: "SoundCloud", dotClass: "bg-[#FF5500]" },
+  { id: "zingmp3", label: "Zing MP3", dotClass: "bg-[#8B5CF6]" },
+  { id: "nhaccuatui", label: "NhacCuaTui", dotClass: "bg-[#0EA5E9]" },
+  { id: "apple_music", label: "Apple Music", dotClass: "bg-[#FA243C]" },
+  { id: "audius", label: "Audius", dotClass: "bg-[#CC0FE0]" },
 ];
 
 const listContainerVariants = {
@@ -64,6 +84,29 @@ function normalizeTitleForDedup(title: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
+function buildFallbackPlatformUrl(
+  source: TrackSource,
+  artistName: string
+): string {
+  const encoded = encodeURIComponent(artistName);
+  switch (source) {
+    case "spotify":
+      return `https://open.spotify.com/search/${encoded}`;
+    case "youtube":
+      return `https://www.youtube.com/results?search_query=${encoded}`;
+    case "soundcloud":
+      return `https://soundcloud.com/search?q=${encoded}`;
+    case "zingmp3":
+      return `https://zingmp3.vn/tim-kiem/tat-ca?q=${encoded}`;
+    case "nhaccuatui":
+      return `https://www.nhaccuatui.com/tim-kiem?q=${encoded}`;
+    case "apple_music":
+      return `https://music.apple.com/vn/search?term=${encoded}`;
+    case "audius":
+      return `https://audius.co/search/${encoded}`;
+  }
+}
+
 interface ArtistPageClientProps {
   artistName: string;
   initialSource?: string;
@@ -79,7 +122,14 @@ export function ArtistPageClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<FilterValue>("all");
+  const [extraTracksBySource, setExtraTracksBySource] = useState<
+    Partial<Record<TrackSource, UnifiedTrack[]>>
+  >({});
+  const [loadingSource, setLoadingSource] = useState<TrackSource | null>(null);
   const [loadingAlbumId, setLoadingAlbumId] = useState<string | null>(null);
+
+  const fetchedSourcesRef = useRef<Set<TrackSource>>(new Set());
+  const tracksSectionRef = useRef<HTMLDivElement | null>(null);
 
   const playTrack = usePlayerStore((s) => s.playTrack);
   const isShuffle = usePlayerStore((s) => s.isShuffle);
@@ -96,13 +146,14 @@ export function ArtistPageClient({
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setExtraTracksBySource({});
+    fetchedSourcesRef.current = new Set();
 
     const params = new URLSearchParams({ name: artistName, source: "all" });
     if (artistId) params.set("id", artistId);
     if (
-      initialSource === "youtube" ||
-      initialSource === "spotify" ||
-      initialSource === "soundcloud"
+      initialSource &&
+      ALL_PLATFORMS.includes(initialSource as TrackSource)
     ) {
       params.set("preferredSource", initialSource);
     }
@@ -129,22 +180,120 @@ export function ArtistPageClient({
     return () => controller.abort();
   }, [artistName, artistId, initialSource, byokVersion]);
 
-  const displayedTracks = useMemo<UnifiedTrack[]>(() => {
-    if (!data?.tracks) return [];
-    if (sourceFilter !== "all") {
-      return data.tracks.filter((t) => t.source === sourceFilter);
+  const profile = data?.profile;
+
+  // On-demand adapter query when user selects a platform tab whose tracks are not yet loaded
+  useEffect(() => {
+    if (!profile || sourceFilter === "all") {
+      setLoadingSource(null);
+      return;
     }
-    // Cross-source smart deduplication for "Tất cả nền tảng"
+
+    const initialMatches = (data?.tracks ?? []).filter(
+      (t) => t.source === sourceFilter
+    );
+    const cachedExtra = extraTracksBySource[sourceFilter];
+    if (
+      initialMatches.length > 0 ||
+      (cachedExtra && cachedExtra.length > 0) ||
+      fetchedSourcesRef.current.has(sourceFilter)
+    ) {
+      setLoadingSource(null);
+      return;
+    }
+
+    const targetSource = sourceFilter;
+    fetchedSourcesRef.current.add(targetSource);
+    const controller = new AbortController();
+    setLoadingSource(targetSource);
+
+    const params = new URLSearchParams({
+      q: profile.name,
+      source: targetSource,
+      region: profile.region || "VN",
+    });
+
+    fetch(`/api/search?${params.toString()}`, {
+      signal: controller.signal,
+      headers: getByokHeaders(),
+    })
+      .then((res) => res.json())
+      .then((res: SearchResponse) => {
+        const fetched = (res.tracks ?? []).filter(
+          (t) => t.source === targetSource
+        );
+        if (fetched.length > 0) {
+          setExtraTracksBySource((prev) => ({
+            ...prev,
+            [targetSource]: fetched,
+          }));
+          return;
+        }
+        // If keyword search returned empty for extended VN/global provider, load default provider feed
+        if (
+          targetSource === "zingmp3" ||
+          targetSource === "nhaccuatui" ||
+          targetSource === "apple_music" ||
+          targetSource === "audius"
+        ) {
+          return fetch(`/api/search?source=${targetSource}&region=${profile.region || "VN"}`, {
+            signal: controller.signal,
+            headers: getByokHeaders(),
+          })
+            .then((r) => r.json())
+            .then((fallbackRes: SearchResponse) => {
+              const list = (fallbackRes.tracks ?? []).filter(
+                (t) => t.source === targetSource
+              );
+              setExtraTracksBySource((prev) => ({
+                ...prev,
+                [targetSource]: list,
+              }));
+            });
+        }
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingSource(null);
+      });
+
+    return () => controller.abort();
+  }, [profile, data?.tracks, sourceFilter, extraTracksBySource]);
+
+  const combinedTracks = useMemo<UnifiedTrack[]>(() => {
+    const base = data?.tracks ?? [];
+    const extras = Object.values(extraTracksBySource).flatMap(
+      (list) => list ?? []
+    );
+    if (extras.length === 0) return base;
+    const seenIds = new Set(base.map((t) => t.id));
+    const merged = [...base];
+    for (const item of extras) {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        merged.push(item);
+      }
+    }
+    return merged;
+  }, [data?.tracks, extraTracksBySource]);
+
+  const displayedTracks = useMemo<UnifiedTrack[]>(() => {
+    if (combinedTracks.length === 0) return [];
+    if (sourceFilter !== "all") {
+      return combinedTracks.filter((t) => t.source === sourceFilter);
+    }
     const seen = new Set<string>();
     const result: UnifiedTrack[] = [];
-    for (const track of data.tracks) {
+    for (const track of combinedTracks) {
       const key = normalizeTitleForDedup(track.title);
       if (key && seen.has(key)) continue;
       if (key) seen.add(key);
       result.push(track);
     }
     return result;
-  }, [data, sourceFilter]);
+  }, [combinedTracks, sourceFilter]);
 
   const displayedAlbums = useMemo<ArtistAlbum[]>(() => {
     if (!data?.albums) return [];
@@ -152,7 +301,26 @@ export function ArtistPageClient({
     return data.albums.filter((a) => a.source === sourceFilter);
   }, [data, sourceFilter]);
 
-  const profile = data?.profile;
+  const activePlatformBadges = useMemo<TrackSource[]>(() => {
+    const set = new Set<TrackSource>(profile?.sourcesFound ?? []);
+    for (const src of Object.keys(extraTracksBySource) as TrackSource[]) {
+      if ((extraTracksBySource[src]?.length ?? 0) > 0) set.add(src);
+    }
+    return ALL_PLATFORMS.filter((src) => set.has(src));
+  }, [profile?.sourcesFound, extraTracksBySource]);
+
+  const externalPlatformLinks = useMemo(() => {
+    if (!profile) return [];
+    return ALL_PLATFORMS.map((src) => ({
+      source: src,
+      label: SOURCE_THEMES[src].label,
+      dotHex: SOURCE_THEMES[src].hex,
+      url:
+        profile.externalUrls[src] ||
+        buildFallbackPlatformUrl(src, profile.name),
+    }));
+  }, [profile]);
+
   const theme = getSourceTheme(profile?.primarySource);
 
   const isFollowing = useMemo(() => {
@@ -162,6 +330,14 @@ export function ArtistPageClient({
       (a) => a.id === profile.id || a.name.trim().toLowerCase() === normName
     );
   }, [followedArtists, profile]);
+
+  const handleSelectPlatformBadge = (src: TrackSource) => {
+    setSourceFilter(src);
+    tracksSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
 
   const handlePlayAll = () => {
     if (displayedTracks.length > 0) {
@@ -204,7 +380,7 @@ export function ArtistPageClient({
 
   if (loading) {
     return (
-      <div className="space-y-8">
+      <div className="w-full min-w-0 space-y-8">
         <div className="h-56 animate-pulse rounded-3xl border border-white/10 bg-zinc-900/60" />
         <TrackSkeleton count={6} />
       </div>
@@ -222,10 +398,9 @@ export function ArtistPageClient({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="w-full min-w-0 space-y-8 overflow-x-hidden">
       {/* ARTIST HERO BANNER */}
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/60 p-6 shadow-2xl shadow-black/60 backdrop-blur-2xl sm:p-8">
-        {/* Dynamic Ambient Tinted Backdrop from Artist Avatar */}
         {(profile.banner || profile.avatar) && (
           <div
             aria-hidden="true"
@@ -237,11 +412,10 @@ export function ArtistPageClient({
         )}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-t from-[#09090b]/90 via-zinc-950/40 to-transparent"
+          className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-t from-[#0B0D12]/90 via-zinc-950/40 to-transparent"
         />
 
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end">
-          {/* Artist Avatar */}
           <div
             style={{ boxShadow: theme.glowShadow }}
             className="shrink-0 self-start rounded-full ring-2 ring-white/15"
@@ -254,7 +428,7 @@ export function ArtistPageClient({
           </div>
 
           <div className="min-w-0 flex-1 space-y-3">
-            {/* Verified + Region & Language Badge + Platforms Found */}
+            {/* Verified + Region + Interactive Platform Badges */}
             <div className="flex flex-wrap items-center gap-2">
               {profile.verified && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-sky-400/30 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-medium text-sky-300">
@@ -271,8 +445,16 @@ export function ArtistPageClient({
                   </span>
                 </span>
               )}
-              {profile.sourcesFound.map((src) => (
-                <SourceBadge key={src} source={src} />
+              {activePlatformBadges.map((src) => (
+                <button
+                  key={src}
+                  type="button"
+                  onClick={() => handleSelectPlatformBadge(src)}
+                  className="rounded-full transition-transform hover:scale-105 focus:outline-none"
+                  title={`Lọc bài hát từ ${SOURCE_THEMES[src].label}`}
+                >
+                  <SourceBadge source={src} />
+                </button>
               ))}
             </div>
 
@@ -294,7 +476,6 @@ export function ArtistPageClient({
               </p>
             )}
 
-            {/* Followers + Genres */}
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-300">
               {profile.followers && profile.followers > 0 && (
                 <span className="inline-flex items-center gap-1.5 font-mono tabular-nums text-zinc-200">
@@ -313,7 +494,7 @@ export function ArtistPageClient({
               ))}
             </div>
 
-            {/* ACTION BAR: Play All, Shuffle, Follow, External Links */}
+            {/* ACTION BAR: Play All, Shuffle, Follow, Wiki */}
             <div className="flex flex-wrap items-center gap-2.5 pt-2">
               <motion.button
                 type="button"
@@ -368,20 +549,6 @@ export function ArtistPageClient({
                 )}
               </motion.button>
 
-              {Object.entries(profile.externalUrls).map(([src, url]) =>
-                url ? (
-                  <a
-                    key={src}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-[11px] capitalize text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    {src} <ExternalLink className="h-3 w-3" />
-                  </a>
-                ) : null
-              )}
-
               {profile.wikiUrl && (
                 <a
                   href={profile.wikiUrl.url}
@@ -395,48 +562,94 @@ export function ArtistPageClient({
                 </a>
               )}
             </div>
+
+            {/* EXTERNAL PLATFORM LINKS (All 7 Platforms) */}
+            <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pt-1 sm:flex-wrap sm:overflow-visible">
+              {externalPlatformLinks.map((item) => (
+                <a
+                  key={item.source}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] font-medium text-zinc-300 transition-colors hover:border-white/25 hover:bg-white/10 hover:text-white"
+                >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: item.dotHex }}
+                  />
+                  <span>{item.label}</span>
+                  <ExternalLink className="h-3 w-3 text-zinc-500" />
+                </a>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* SOURCE FILTER TABS (layoutId="artistSourceTab") */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-white">Bài hát phổ biến</h2>
+      {/* SOURCE FILTER TABS FOR POPULAR TRACKS (All 7 Platforms) */}
+      <div
+        ref={tracksSectionRef}
+        className="flex w-full min-w-0 flex-col gap-3"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-white">Bài hát phổ biến</h2>
+          <span className="text-xs text-zinc-400">
+            {displayedTracks.length} bài hát
+          </span>
+        </div>
 
-        <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl">
-          {SOURCE_TABS.map((tab) => {
-            const active = sourceFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSourceFilter(tab.id)}
-                className={`relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                  active ? "text-white" : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="artistSourceTab"
-                    transition={SPRING_PHYSICS}
-                    className="absolute inset-0 -z-10 rounded-full border border-white/15 bg-white/15 shadow-sm"
-                  />
-                )}
-                {tab.dotClass && (
-                  <span className={`h-1.5 w-1.5 rounded-full ${tab.dotClass}`} />
-                )}
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        <div className="w-full min-w-0">
+          <div
+            role="tablist"
+            aria-label="Lọc bài hát nghệ sĩ theo nền tảng"
+            className="no-scrollbar inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-zinc-900/60 p-1 backdrop-blur-xl"
+          >
+            {SOURCE_TABS.map((tab) => {
+              const active = sourceFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setSourceFilter(tab.id)}
+                  className={`relative flex shrink-0 select-none items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium caret-transparent transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/30 ${
+                    active ? "text-white" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="artistSourceTab"
+                      transition={SPRING_PHYSICS}
+                      className="absolute inset-0 z-0 rounded-full border border-white/20 bg-white/15 shadow-sm"
+                    />
+                  )}
+                  {tab.dotClass && (
+                    <span
+                      className={`relative z-10 h-1.5 w-1.5 rounded-full ${tab.dotClass}`}
+                    />
+                  )}
+                  <span className="relative z-10">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* POPULAR TRACKS LIST */}
-      {displayedTracks.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-8 text-center text-xs text-zinc-500 backdrop-blur-xl">
-          Không có bài hát nào cho nguồn đang chọn. Hãy thử chọn &ldquo;Tất cả
-          nền tảng&rdquo;.
+      {sourceFilter !== "all" && loadingSource === sourceFilter ? (
+        <TrackSkeleton count={5} />
+      ) : displayedTracks.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-8 text-center text-xs text-zinc-400 backdrop-blur-xl">
+          Chưa tìm thấy bài hát phù hợp của{" "}
+          <strong className="text-white">{profile.name}</strong> trên{" "}
+          <strong className="text-white">
+            {sourceFilter === "all"
+              ? "các nền tảng"
+              : SOURCE_THEMES[sourceFilter].label}
+          </strong>
+          . Hãy thử chọn &ldquo;Tất cả nền tảng&rdquo;.
         </div>
       ) : (
         <motion.div
