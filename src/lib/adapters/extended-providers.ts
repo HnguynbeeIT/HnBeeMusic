@@ -86,7 +86,7 @@ export const zingMp3ProviderAdapter: AudioAdapter = {
       };
     }
 
-    const single = await zingMp3Adapter.getTrackInfo(parsed.id);
+    const single = await zingMp3Adapter.getTrackInfo(parsed.id, parsed.url);
     if (!single) return null;
     return {
       type: "track",

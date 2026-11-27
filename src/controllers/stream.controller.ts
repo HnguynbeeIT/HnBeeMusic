@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { aggregatorService } from "@/services/aggregator.service";
 import { parseUnifiedId } from "@/types/audio";
 
-const UPSTREAM_TIMEOUT_MS = 12_000;
+const UPSTREAM_TIMEOUT_MS = 10_000;
+const GOOGLEVIDEO_CHUNK_BYTES = 524_288;
 const DEFAULT_AUDIO_MIME = "audio/mpeg";
 const DEFAULT_PROXY_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 function createCorsHeaders(extra: Record<string, string> = {}): Headers {
-  const headers = new Headers({
+  return new Headers({
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
     "Access-Control-Allow-Headers": "Range, Content-Type",
@@ -17,15 +18,48 @@ function createCorsHeaders(extra: Record<string, string> = {}): Headers {
     "Cache-Control": "no-store",
     ...extra,
   });
-  return headers;
 }
 
-/**
- * Audio Stream Proxy Controller for `GET /api/stream/:unifiedId`.
- * - Resolves StreamData via AggregatorService (with TTL cache).
- * - Attaches upstream anti-hotlink headers (`Referer`, `User-Agent`, `Cookie`, etc.).
- * - Forwards client HTTP `Range` requests and returns `206 Partial Content` for smooth seeking.
- */
+function isPlayableAudioContentType(contentType: string | null): boolean {
+  if (!contentType) return true;
+  const normalized = contentType.toLowerCase();
+  if (
+    normalized.includes("text/html") ||
+    normalized.includes("application/json") ||
+    normalized.includes("application/xml") ||
+    normalized.includes("text/xml")
+  ) {
+    return false;
+  }
+  return (
+    normalized.startsWith("audio/") ||
+    normalized.startsWith("video/") ||
+    normalized.includes("application/octet-stream") ||
+    normalized.includes("binary/octet-stream") ||
+    normalized.includes("mpegurl")
+  );
+}
+
+function normalizeUpstreamRange(
+  streamUrl: string,
+  clientRange: string | null
+): string | null {
+  const isGoogleVideo = /googlevideo\.com/i.test(streamUrl);
+  if (!isGoogleVideo) return clientRange;
+
+  if (!clientRange) {
+    return `bytes=0-${GOOGLEVIDEO_CHUNK_BYTES - 1}`;
+  }
+  const openEnded = clientRange.match(/^bytes=(\d+)-$/i);
+  if (openEnded?.[1]) {
+    const start = Number.parseInt(openEnded[1], 10);
+    if (Number.isFinite(start) && start >= 0) {
+      return `bytes=${start}-${start + GOOGLEVIDEO_CHUNK_BYTES - 1}`;
+    }
+  }
+  return clientRange;
+}
+
 export async function handleUnifiedStreamRequest(
   request: NextRequest,
   rawUnifiedId: string
@@ -50,7 +84,18 @@ export async function handleUnifiedStreamRequest(
     bypassCache,
   });
 
-  if (!streamData) {
+  if (!streamData || !streamData.url) {
+    if (streamData?.requiresSdk) {
+      return NextResponse.json(
+        {
+          error: "Track requires official client SDK playback (DRM protected).",
+          unifiedId: normalizedUnifiedId,
+          requiresSdk: true,
+          sdkUri: streamData.sdkUri ?? null,
+        },
+        { status: 422, headers: createCorsHeaders() }
+      );
+    }
     return NextResponse.json(
       {
         error: "Stream not available for this track.",
@@ -60,21 +105,9 @@ export async function handleUnifiedStreamRequest(
     );
   }
 
-  // DRM-protected platforms (Apple Music FairPlay / Spotify Widevine) require official client SDK playback
-  if (streamData.requiresSdk && !streamData.url) {
-    return NextResponse.json(
-      {
-        error: "Track requires official client SDK playback (DRM protected).",
-        unifiedId: normalizedUnifiedId,
-        requiresSdk: true,
-        sdkUri: streamData.sdkUri ?? null,
-      },
-      { status: 422, headers: createCorsHeaders() }
-    );
-  }
-
   const clientRange = request.headers.get("range");
   const buildUpstreamHeaders = (
+    targetUrl: string,
     customHeaders?: Record<string, string>
   ): Record<string, string> => {
     const merged: Record<string, string> = {
@@ -82,8 +115,9 @@ export async function handleUnifiedStreamRequest(
       Accept: "*/*",
       ...(customHeaders ?? {}),
     };
-    if (clientRange) {
-      merged.Range = clientRange;
+    const effectiveRange = normalizeUpstreamRange(targetUrl, clientRange);
+    if (effectiveRange) {
+      merged.Range = effectiveRange;
     }
     return merged;
   };
@@ -92,13 +126,12 @@ export async function handleUnifiedStreamRequest(
   try {
     upstreamResponse = await fetch(streamData.url, {
       method: request.method === "HEAD" ? "HEAD" : "GET",
-      headers: buildUpstreamHeaders(streamData.headers),
+      headers: buildUpstreamHeaders(streamData.url, streamData.headers),
       redirect: "follow",
       cache: "no-store",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
 
-    // If cached signed URL expired early (403/410), refresh once via adapter
     if (
       (upstreamResponse.status === 403 || upstreamResponse.status === 410) &&
       !bypassCache
@@ -111,7 +144,7 @@ export async function handleUnifiedStreamRequest(
         streamData = freshStream;
         upstreamResponse = await fetch(freshStream.url, {
           method: request.method === "HEAD" ? "HEAD" : "GET",
-          headers: buildUpstreamHeaders(freshStream.headers),
+          headers: buildUpstreamHeaders(freshStream.url, freshStream.headers),
           redirect: "follow",
           cache: "no-store",
           signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
@@ -126,7 +159,10 @@ export async function handleUnifiedStreamRequest(
     );
   }
 
-  if (!upstreamResponse || (!upstreamResponse.ok && upstreamResponse.status !== 206)) {
+  if (
+    !upstreamResponse ||
+    (!upstreamResponse.ok && upstreamResponse.status !== 206)
+  ) {
     return NextResponse.json(
       {
         error: "Upstream audio server rejected the stream request.",
@@ -136,11 +172,22 @@ export async function handleUnifiedStreamRequest(
     );
   }
 
-  const contentType =
-    upstreamResponse.headers.get("content-type") ||
-    streamData.mimeType ||
-    DEFAULT_AUDIO_MIME;
+  const rawContentType = upstreamResponse.headers.get("content-type");
   const contentLength = upstreamResponse.headers.get("content-length");
+  if (!isPlayableAudioContentType(rawContentType) || contentLength === "0") {
+    try {
+      await upstreamResponse.body?.cancel();
+    } catch {}
+    return NextResponse.json(
+      {
+        error: "Upstream returned a non-audio payload.",
+        contentType: rawContentType ?? "unknown",
+      },
+      { status: 502, headers: createCorsHeaders() }
+    );
+  }
+
+  const contentType = rawContentType || streamData.mimeType || DEFAULT_AUDIO_MIME;
   const contentRange = upstreamResponse.headers.get("content-range");
   const acceptRanges =
     upstreamResponse.headers.get("accept-ranges") || "bytes";
@@ -159,7 +206,6 @@ export async function handleUnifiedStreamRequest(
     responseHeaders.set("Content-Range", contentRange);
   }
 
-  // Return 206 Partial Content whenever upstream served partial bytes or client requested a valid Range
   const status =
     upstreamResponse.status === 206 || Boolean(contentRange) ? 206 : 200;
 

@@ -737,6 +737,29 @@ export function AudioEngineManager() {
     updateTrackInStore,
   ]);
 
+  useEffect(() => {
+    if (
+      !currentTrack ||
+      currentTrack.resolvedSource ||
+      (currentTrack.source !== "zingmp3" &&
+        currentTrack.source !== "nhaccuatui" &&
+        currentTrack.source !== "audius")
+    ) {
+      return;
+    }
+
+    const cached = getCachedStream(currentTrack.id);
+    if (cached?.streamUrl && cached?.resolvedSource) {
+      updateTrackInStore({
+        ...currentTrack,
+        streamUrl: cached.streamUrl,
+        resolvedSource: cached.resolvedSource,
+        matchedTitle: cached.matchedTitle,
+        matchScore: cached.matchScore,
+      });
+    }
+  }, [currentTrack, updateTrackInStore]);
+
   // LAZY STREAM MATCHING for Spotify & Apple Music current track (0ms persistent localStorage cache first!)
   useEffect(() => {
     if (
@@ -1679,6 +1702,32 @@ export function AudioEngineManager() {
     setPlaybackError,
     updateTrackInStore,
   ]);
+
+  useEffect(() => {
+    if (
+      activeEngine !== "html5" ||
+      !isPlaying ||
+      !currentTrack ||
+      !html5StreamUrl?.startsWith("/api/providers/")
+    ) {
+      return;
+    }
+
+    const trackId = currentTrack.id;
+    const timer = setTimeout(() => {
+      const store = usePlayerStore.getState();
+      const progress = usePlaybackTimeStore.getState().progress;
+      if (
+        store.currentTrack?.id === trackId &&
+        store.isPlaying &&
+        progress < 0.25
+      ) {
+        handleHtml5Error();
+      }
+    }, 4500);
+
+    return () => clearTimeout(timer);
+  }, [activeEngine, isPlaying, currentTrack, html5StreamUrl, handleHtml5Error]);
 
   return (
     <>

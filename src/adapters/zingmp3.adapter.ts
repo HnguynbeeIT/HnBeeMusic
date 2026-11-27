@@ -17,6 +17,7 @@ const DEFAULT_ZING_API_KEY = "88265e23d4284f25963e6eedac8fbfa3";
 const DEFAULT_ZING_SECRET_KEY = "2aa2d1c561e809b267f3638c4a307aab";
 const ZING_STREAM_TTL_MS = 15 * 60 * 1000;
 const ZING_COOKIE_TTL_MS = 30 * 60 * 1000;
+const ZING_REQUEST_TIMEOUT_MS = 3500;
 
 interface ZingArtistItem {
   name?: string;
@@ -79,16 +80,33 @@ interface ZingAutocompleteResponse {
   };
 }
 
-/**
- * Zing MP3 Audio Adapter:
- * - Signs requests with SHA-256 + HMAC-SHA512 (`sig`) and manages session/VIP cookies.
- * - Extracts direct MP3/M4A streams (320kbps when VIP cookie is provided, 128kbps free tier)
- *   and synced lyrics (`sentences` or LRC file).
- */
+function isValidDirectAudioStreamUrl(candidate: unknown): candidate is string {
+  if (typeof candidate !== "string") return false;
+  const trimmed = candidate.trim();
+  if (!trimmed || trimmed.toUpperCase() === "VIP") return false;
+  if (!/^https?:\/\//i.test(trimmed)) return false;
+  if (/\.html?(\?|$)/i.test(trimmed)) return false;
+  return true;
+}
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
 export class ZingMp3Adapter extends BaseAdapter {
   public readonly source = "zingmp3" as const;
   private cachedCookie: string | null = null;
   private cookieExpiresAt = 0;
+
+  constructor() {
+    super(ZING_REQUEST_TIMEOUT_MS, 1);
+  }
 
   private getApiKey(): string {
     return process.env.ZINGMP3_API_KEY?.trim() || DEFAULT_ZING_API_KEY;
@@ -113,6 +131,7 @@ export class ZingMp3Adapter extends BaseAdapter {
         headers: {
           Accept: "text/html,application/xhtml+xml",
         },
+        timeoutMs: 2500,
         retries: 0,
       });
       const setCookie = response.headers.get("set-cookie");
@@ -128,7 +147,7 @@ export class ZingMp3Adapter extends BaseAdapter {
         }
       }
     } catch {
-      // Proceed without session cookie; autocomplete fallback still functions
+      return "";
     }
 
     return "";
@@ -165,7 +184,7 @@ export class ZingMp3Adapter extends BaseAdapter {
 
     const envelope = await this.fetchJson<ZingApiEnvelope<T>>(
       `${ZING_BASE_URL}${apiPath}?${query.toString()}`,
-      { headers }
+      { headers, timeoutMs: ZING_REQUEST_TIMEOUT_MS, retries: 0 }
     );
 
     if (!envelope || envelope.err !== 0 || !envelope.data) {
@@ -206,7 +225,6 @@ export class ZingMp3Adapter extends BaseAdapter {
       ? `https://photo-resize-zmp3.zmdcdn.me/${rawThumb.replace(/^\/+/, "")}`
       : "";
 
-    // streamingStatus === 2 denotes VIP-only unless ZINGMP3_COOKIE is provided
     const hasVipCookie = Boolean(process.env.ZINGMP3_COOKIE?.trim());
     const isStreamable = song.streamingStatus !== 2 || hasVipCookie;
 
@@ -224,12 +242,53 @@ export class ZingMp3Adapter extends BaseAdapter {
     });
   }
 
+  private async fetchHtmlMetadataFallback(
+    url: string,
+    id: string
+  ): Promise<UnifiedTrack | null> {
+    const html = await this.fetchText(url, {
+      headers: { Accept: "text/html" },
+      timeoutMs: 3000,
+      retries: 0,
+    });
+    if (!html) return null;
+
+    const ogTitle =
+      html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)?.[1] ||
+      html.match(/<title>([^<]+)<\/title>/i)?.[1] ||
+      "";
+    const ogImage =
+      html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i)?.[1] ||
+      "";
+    if (!ogTitle) return null;
+
+    const cleanTitle = decodeHtmlEntities(ogTitle)
+      .replace(/\s*\|\s*Zing MP3.*$/i, "")
+      .replace(/\s*-\s*Zing MP3.*$/i, "")
+      .trim();
+    const parts = cleanTitle.split(/\s+-\s+/);
+    const title = parts[0]?.trim() || cleanTitle;
+    const artistRaw = parts.slice(1).join(" - ").trim() || "Zing MP3 Artist";
+
+    return this.createUnifiedTrack({
+      id,
+      title,
+      artists: artistRaw
+        .split(/,|&/)
+        .map((a) => a.trim())
+        .filter(Boolean),
+      thumbnail: ogImage,
+      duration: 0,
+      isStreamable: true,
+      sourceUrl: url,
+    });
+  }
+
   public async search(query: string, limit: number = 10): Promise<UnifiedTrack[]> {
     return this.safeExecute("search", [], async () => {
       const trimmed = query.trim();
       if (!trimmed) return [];
 
-      // Primary: Signed v2 search/multi
       const multi = await this.requestSignedApi<ZingSearchMultiData>(
         "/api/v2/search/multi",
         {},
@@ -242,14 +301,13 @@ export class ZingMp3Adapter extends BaseAdapter {
           .slice(0, limit);
       }
 
-      // Resilient fallback: Public Zing MP3 autocomplete suggestions (type 1 = songs)
       const acQuery = new URLSearchParams({ num: String(limit), query: trimmed });
       const ac = await this.fetchJson<ZingAutocompleteResponse>(
         `${ZING_AUTOCOMPLETE_URL}?${acQuery.toString()}`,
         {
-          headers: {
-            Referer: `${ZING_BASE_URL}/`,
-          },
+          headers: { Referer: `${ZING_BASE_URL}/` },
+          timeoutMs: 3000,
+          retries: 0,
         }
       );
 
@@ -265,7 +323,10 @@ export class ZingMp3Adapter extends BaseAdapter {
     });
   }
 
-  public async getTrackInfo(id: string): Promise<UnifiedTrack | null> {
+  public async getTrackInfo(
+    id: string,
+    sourceUrl?: string
+  ): Promise<UnifiedTrack | null> {
     return this.safeExecute("getTrackInfo", null, async () => {
       const cleanId = id.trim();
       if (!cleanId) return null;
@@ -274,7 +335,15 @@ export class ZingMp3Adapter extends BaseAdapter {
         "/api/v2/page/get/song",
         { id: cleanId }
       );
-      return song ? this.mapSongToUnifiedTrack(song) : null;
+      if (song) {
+        const mapped = this.mapSongToUnifiedTrack(song);
+        if (mapped) return mapped;
+      }
+
+      if (sourceUrl) {
+        return this.fetchHtmlMetadataFallback(sourceUrl, cleanId);
+      }
+      return null;
     });
   }
 
@@ -315,16 +384,12 @@ export class ZingMp3Adapter extends BaseAdapter {
       );
       if (!streaming) return null;
 
-      const url320 =
-        typeof streaming["320"] === "string" &&
-        streaming["320"].startsWith("http")
-          ? streaming["320"]
-          : null;
-      const url128 =
-        typeof streaming["128"] === "string" &&
-        streaming["128"].startsWith("http")
-          ? streaming["128"]
-          : null;
+      const url320 = isValidDirectAudioStreamUrl(streaming["320"])
+        ? streaming["320"].trim()
+        : null;
+      const url128 = isValidDirectAudioStreamUrl(streaming["128"])
+        ? streaming["128"].trim()
+        : null;
 
       const selectedUrl = url320 ?? url128;
       if (!selectedUrl) return null;
