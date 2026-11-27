@@ -1,6 +1,25 @@
 # Nhật ký Phát triển & Lịch sử Cập nhật — HnBee Music
 
-Tài liệu này tổng hợp toàn bộ hành trình xây dựng, nâng cấp tính năng và vá lỗi của **HnBee Music** từ phiên bản khởi tạo (`v1.0.0`) đến phiên bản mới nhất (`v2.5.0`).
+Tài liệu này tổng hợp toàn bộ hành trình xây dựng, nâng cấp tính năng và vá lỗi của **HnBee Music** từ phiên bản khởi tạo (`v1.0.0`) đến phiên bản mới nhất (`v2.5.1`).
+
+---
+
+## [v2.5.1] — 2026-11-27 — Tối Ưu Hóa Windows Desktop Native & Bảo Mật Kho Mã Nguồn
+
+### Tối ưu Windows Desktop (`desktop/`)
+- **Frameless TitleBar & Window Drag (`ElectronTitleBar.tsx`, `desktop/main.js`)**:
+  - Tinh chỉnh `titleBarOverlay` (`#09090b`, cao `36px`) hòa quyện liền mạch với nền tối Windows 10/11, bổ sung vùng kéo cửa sổ `-webkit-app-region: drag` kết hợp `-webkit-app-region: no-drag` cho toàn bộ nút/input và tự động ẩn nút *"Tải bản PC (.exe)"* khi chạy trong Electron.
+- **Windows Taskbar Thumbnail Toolbar (`setThumbarButtons`)**:
+  - Tích hợp 3 nút điều khiển nhanh (**Bài trước**, **Phát / Tạm dừng** đồng bộ trạng thái trực tiếp qua IPC, **Bài tiếp theo**) khi rê chuột vào biểu tượng trên thanh Taskbar Windows.
+- **Single Instance Lock, Nhớ Vị Trí Cửa Sổ & Đóng Gói Tối Ưu**:
+  - Tự động focus lại cửa sổ cũ khi đang chạy dưới System Tray, lưu/khôi phục vị trí & kích thước cửa sổ (`window-state.json` có kiểm tra màn hình hợp lệ), bật `backgroundThrottling: false`, nén `asar: true` (`compression: maximum`) loại bỏ file thừa.
+
+### Bảo mật & Kiểm toán Public Repository (`SECURITY.md`, `.env.example`, `.gitignore`)
+- **OAuth Desktop qua Trình Duyệt Hệ Thống & Deep Link (`hnbeemusic://`)**:
+  - Khóa chặt cờ bảo mật Electron (`contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, `webSecurity: true`, chặn popup và điều hướng ngoài origin).
+  - Bổ sung luồng chuyển tiếp OAuth ngắn hạn (`120s`, `purpose: "desktop-handoff"`) qua `/api/auth/desktop-exchange` giúp đăng nhập Google/Facebook an toàn trên Windows Desktop.
+- **Kiểm toán Git & Chuẩn hóa Tài liệu Bảo mật**:
+  - Xác minh 0 secret/API key bị lộ trong mã nguồn hiện tại và toàn bộ lịch sử `git log -p`; siết chặt `.gitignore`, cập nhật `.env.example` đầy đủ và bổ sung `SECURITY.md`.
 
 ---
 

@@ -31,6 +31,7 @@ import { TrackThumbnail } from "@/components/track/TrackThumbnail";
 import { BrandLogo } from "@/components/BrandLogo";
 import { BrandCredit } from "@/components/BrandCredit";
 import { RegionSelector } from "@/components/layout/RegionSelector";
+import { isElectronClient } from "@/components/layout/ElectronTitleBar";
 import { getInitials } from "@/components/auth/AuthModal";
 
 const NAV_ITEMS = [
@@ -50,6 +51,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [quickQuery, setQuickQuery] = useState("");
+  const [isDesktopApp, setIsDesktopApp] = useState(false);
 
   const likedCount = usePlayerStore((s) => s.likedTracks.length);
   const playTrack = usePlayerStore((s) => s.playTrack);
@@ -74,6 +76,7 @@ export function Sidebar() {
 
   useEffect(() => {
     void initAuth();
+    setIsDesktopApp(isElectronClient());
   }, [initAuth]);
 
   const handleQuickSearch = (e: React.FormEvent) => {
@@ -153,7 +156,7 @@ export function Sidebar() {
       </header>
 
       {/* DESKTOP FLOATING GLASS SIDEBAR (w-64 m-2 rounded-2xl) */}
-      <aside className="fixed bottom-28 left-0 top-0 z-30 m-2 hidden w-64 flex-col rounded-2xl border border-white/10 bg-zinc-900/60 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:flex">
+      <aside className="hnbee-desktop-sidebar fixed bottom-28 left-0 top-0 z-30 m-2 hidden w-64 flex-col rounded-2xl border border-white/10 bg-zinc-900/60 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:flex">
         {/* Brand Logo + API Settings Gear */}
         <div className="mb-4 flex items-center justify-between px-1">
           <Link href="/" aria-label="HnBee Music Home" className="inline-flex">
@@ -402,17 +405,19 @@ export function Sidebar() {
               </>
             )}
           </motion.button>
-          <Link
-            href="/download"
-            className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
-              pathname === "/download"
-                ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
-                : "border-emerald-400/20 bg-emerald-500/[0.08] text-emerald-300 hover:bg-emerald-500/20"
-            }`}
-          >
-            <Monitor className="h-3.5 w-3.5" />
-            Tải bản PC (.exe)
-          </Link>
+          {!isDesktopApp && (
+            <Link
+              href="/download"
+              className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
+                pathname === "/download"
+                  ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
+                  : "border-emerald-400/20 bg-emerald-500/[0.08] text-emerald-300 hover:bg-emerald-500/20"
+              }`}
+            >
+              <Monitor className="h-3.5 w-3.5" />
+              Tải bản PC (.exe)
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setAboutOpen(true)}

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { MotionProvider } from "@/components/layout/MotionProvider";
+import { ElectronTitleBar } from "@/components/layout/ElectronTitleBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { AmbientGlow } from "@/components/player/AmbientGlow";
 import { AudioEngineManager } from "@/components/player/AudioEngineManager";
@@ -59,11 +60,12 @@ export default function RootLayout({
     >
       <body className="min-h-screen overflow-x-hidden bg-[#09090b] font-sans text-zinc-100 antialiased selection:bg-emerald-400/30 selection:text-white">
         <MotionProvider>
+          <ElectronTitleBar />
           <AmbientGlow />
           <Sidebar />
 
           {/* Main scrollable viewport: portrait safe-area bottom cushion (140px + safe-area) so Mini Player + Nav never cover last track */}
-          <main className="min-h-screen w-full flex-1 overflow-x-hidden overflow-y-auto pb-[calc(140px+env(safe-area-inset-bottom))] md:pb-32 md:pl-[272px]">
+          <main className="hnbee-main-viewport min-h-screen w-full flex-1 overflow-x-hidden overflow-y-auto pb-[calc(140px+env(safe-area-inset-bottom))] md:pb-32 md:pl-[272px]">
             <div className="mx-auto w-full max-w-5xl px-3.5 py-5 sm:px-8 sm:py-8">
               {children}
             </div>

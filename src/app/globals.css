@@ -67,3 +67,28 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Electron Frameless Windows/macOS TitleBar Drag & No-Drag Regions */
+.electron-drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.electron-no-drag,
+html.hnbee-electron button,
+html.hnbee-electron a,
+html.hnbee-electron input,
+html.hnbee-electron select,
+html.hnbee-electron textarea,
+html.hnbee-electron [role="button"],
+html.hnbee-electron [role="slider"] {
+  -webkit-app-region: no-drag;
+}
+
+html.hnbee-electron .hnbee-desktop-sidebar {
+  top: 36px;
+}
+
+html.hnbee-electron .hnbee-main-viewport {
+  padding-top: 36px;
+}

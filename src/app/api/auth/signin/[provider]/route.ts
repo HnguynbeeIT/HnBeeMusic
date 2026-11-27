@@ -32,6 +32,8 @@ export async function GET(
 
   const state = createSignedOAuthState(provider);
   const authorizeUrl = buildOAuthAuthorizeUrl(provider, origin, state);
+  const isDesktopFlow =
+    new URL(request.url).searchParams.get("desktop") === "1";
 
   const response = NextResponse.redirect(authorizeUrl);
   response.cookies.set(OAUTH_STATE_COOKIE, state, {
@@ -41,6 +43,16 @@ export async function GET(
     path: "/",
     maxAge: 60 * 10, // 10 minutes
   });
+
+  if (isDesktopFlow) {
+    response.cookies.set("hnbee_oauth_desktop", "1", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: origin.startsWith("https://"),
+      path: "/",
+      maxAge: 60 * 10,
+    });
+  }
 
   return response;
 }

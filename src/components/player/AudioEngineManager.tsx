@@ -182,6 +182,12 @@ export function AudioEngineManager() {
     playRequestIdRef.current += 1;
   }, [currentTrack?.id]);
 
+  // Sync live playback state to Windows Electron Taskbar Thumbnail Toolbar & System Tray tooltip
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.hnbeeDesktop?.setPlayingState?.(Boolean(isPlaying && currentTrack));
+  }, [isPlaying, currentTrack?.id]);
+
   // SponsorBlock state refs (avoid React re-renders on every 250ms progress tick)
   const sponsorSegmentsRef = useRef<SponsorSegment[]>([]);
   const skippedSponsorKeysRef = useRef<Set<string>>(new Set());

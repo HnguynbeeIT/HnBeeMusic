@@ -349,6 +349,12 @@ export function AuthModal() {
                   <div className="space-y-2.5">
                     <motion.a
                       href="/api/auth/signin/google"
+                      onClick={(e) => {
+                        if (window.hnbeeDesktop?.openOAuth) {
+                          e.preventDefault();
+                          window.hnbeeDesktop.openOAuth("google");
+                        }
+                      }}
                       {...BUTTON_MOTION}
                       className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/15 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 shadow-md transition-colors hover:bg-zinc-100"
                     >
@@ -375,6 +381,12 @@ export function AuthModal() {
 
                     <motion.a
                       href="/api/auth/signin/facebook"
+                      onClick={(e) => {
+                        if (window.hnbeeDesktop?.openOAuth) {
+                          e.preventDefault();
+                          window.hnbeeDesktop.openOAuth("facebook");
+                        }
+                      }}
                       {...BUTTON_MOTION}
                       className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-[#1877F2]/40 bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-colors hover:bg-[#166FE5]"
                     >

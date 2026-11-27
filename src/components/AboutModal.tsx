@@ -42,8 +42,16 @@ const EXPERIENCES = [
 
 const WHATS_NEW = [
   {
-    version: "v2.5.0",
+    version: "v2.5.1",
     badge: "Mới nhất",
+    highlights: [
+      "Nâng cấp ứng dụng Windows Desktop với thanh tiêu đề liền mạch, điều khiển nhanh ngay trên thanh Taskbar Windows và tự động nhớ kích thước cửa sổ.",
+      "Tăng cường bảo mật đăng nhập Google / Facebook trên máy tính qua trình duyệt gốc và tối ưu tốc độ khởi động ứng dụng.",
+    ],
+  },
+  {
+    version: "v2.5.0",
+    badge: "Giao diện",
     highlights: [
       "Tái thiết kế Trang chủ Dark Glassmorphism với Quick Access, Spotlight Hero và dải khám phá ngang.",
       "Ra mắt bản ứng dụng Desktop Windows (.exe) chạy nền dưới System Tray & điều khiển bằng phím Media.",
@@ -56,14 +64,6 @@ const WHATS_NEW = [
     highlights: [
       "Nâng cấp độ chính xác khớp bài hát cho Playlist Spotify và tối ưu tốc độ tải xuống dưới 1.5 giây.",
       "Hỗ trợ nghe nền mượt hơn trên iOS với luồng âm thanh trực tiếp và tự chuyển bài khi khóa màn hình.",
-    ],
-  },
-  {
-    version: "v2.3.0",
-    badge: "Trải nghiệm",
-    highlights: [
-      "Bổ sung Chuyển bài mượt (Crossfade 0–8s) và tải trước bài hát kế tiếp không ngắt quãng.",
-      "Đồng bộ Cloud tự động bằng Google / Facebook giữa máy tính và điện thoại.",
     ],
   },
 ];

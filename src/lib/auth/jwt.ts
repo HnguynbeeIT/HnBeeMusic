@@ -38,7 +38,57 @@ export async function verifySessionToken(
 ): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
-    if (!payload.sub || typeof payload.username !== "string") return null;
+    if (
+      !payload.sub ||
+      typeof payload.username !== "string" ||
+      payload.purpose === "desktop-handoff"
+    ) {
+      return null;
+    }
+    return {
+      sub: payload.sub,
+      username: payload.username,
+      displayName:
+        typeof payload.displayName === "string"
+          ? payload.displayName
+          : payload.username,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Short-lived (120s) signed token strictly scoped for Electron OS-browser -> hnbeemusic:// OAuth handoff.
+ * Cannot be reused as a regular session cookie.
+ */
+export async function signDesktopHandoffToken(
+  payload: SessionPayload
+): Promise<string> {
+  return new SignJWT({
+    username: payload.username,
+    displayName: payload.displayName,
+    purpose: "desktop-handoff",
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(payload.sub)
+    .setIssuedAt()
+    .setExpirationTime("120s")
+    .sign(getJwtSecret());
+}
+
+export async function verifyDesktopHandoffToken(
+  token: string
+): Promise<SessionPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, getJwtSecret());
+    if (
+      payload.purpose !== "desktop-handoff" ||
+      !payload.sub ||
+      typeof payload.username !== "string"
+    ) {
+      return null;
+    }
     return {
       sub: payload.sub,
       username: payload.username,

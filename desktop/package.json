@@ -1,6 +1,6 @@
 {
   "name": "hnbee-music-desktop",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "HnBee Music Desktop App for Windows (Multi-Source Audiophile Streaming)",
   "main": "main.js",
   "author": "HnBeeStudio",
@@ -19,24 +19,44 @@
     "appId": "com.hnbeestudio.hnbeemusic",
     "productName": "HnBee Music",
     "copyright": "Copyright © 2026 HnBeeStudio",
+    "asar": true,
+    "compression": "maximum",
+    "removePackageScripts": true,
+    "protocols": [
+      {
+        "name": "HnBee Music Protocol",
+        "schemes": [
+          "hnbeemusic"
+        ]
+      }
+    ],
     "directories": {
       "output": "dist"
     },
     "files": [
       "main.js",
       "preload.js",
-      "assets/**/*"
+      "assets/**/*",
+      "!**/*.map",
+      "!**/*.md",
+      "!**/*.ts",
+      "!**/test/**",
+      "!**/tests/**"
     ],
     "win": {
       "icon": "assets/icon.png",
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

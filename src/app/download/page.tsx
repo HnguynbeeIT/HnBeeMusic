@@ -75,7 +75,7 @@ export default function DownloadPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <Sparkles className="h-3.5 w-3.5" />
-                Phiên bản mới nhất v2.5.0
+                Phiên bản mới nhất v2.5.1
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-[11px] text-zinc-300">
                 <Monitor className="h-3.5 w-3.5 text-sky-400" />
@@ -129,7 +129,7 @@ export default function DownloadPage() {
               </p>
               <p className="flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>Phiên bản: v2.5.0 (x64)</span>
+                <span>Phiên bản: v2.5.1 (x64)</span>
               </p>
               <p className="flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
