@@ -12,6 +12,10 @@ import {
   resolveSpotifyResource,
 } from "@/lib/adapters/spotify";
 import { fetchUnifiedArtist } from "@/lib/adapters/artist";
+import {
+  findExtendedAdapterForUrl,
+  zingMp3ProviderAdapter,
+} from "@/lib/adapters/extended-providers";
 
 export const maxDuration = 30;
 
@@ -68,10 +72,10 @@ export async function POST(request: NextRequest) {
       clientSecret: spSecretHeader,
     };
 
-    // Mode 1: Lazy Stream Matching for Spotify tracks OR SoundCloud 30s Go+ SNIPPET tracks
+    // Mode 1: Lazy Stream Matching for Spotify / Apple Music tracks OR SoundCloud 30s Go+ SNIPPET tracks
     if (body.matchTrack) {
       const t = body.matchTrack;
-      if (t.source !== "spotify" && !t.isSnippet) {
+      if (t.source !== "spotify" && t.source !== "apple_music" && !t.isSnippet) {
         return NextResponse.json({ track: t });
       }
       if (t.source === "soundcloud" && t.isSnippet) {
@@ -82,7 +86,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ track: matched });
       }
       let matched: UnifiedTrack = t;
-      if (ytHeader) {
+      if (ytHeader || t.source === "apple_music") {
         matched = await matchSpotifyTrackToAudio(t, byokCredentials);
       } else {
         try {
@@ -98,20 +102,55 @@ export async function POST(request: NextRequest) {
           matched = t;
         }
       }
+
+      // Apple Music / V-Pop fallback bridge -> Zing MP3 full audio when YouTube/SoundCloud missed
+      if (!matched.streamUrl && t.source === "apple_music") {
+        const zingCandidates = await zingMp3ProviderAdapter.search(
+          `${t.title} ${t.artist}`,
+          3
+        );
+        const zingHit = zingCandidates[0];
+        if (zingHit?.streamUrl) {
+          matched = {
+            ...t,
+            streamUrl: zingHit.streamUrl,
+            resolvedSource: "zingmp3",
+            matchedTitle: zingHit.title,
+          };
+        }
+      }
+
       return NextResponse.json({ track: matched });
     }
 
-    // Mode 2: Parse & Resolve pasted URL (YouTube Video/Playlist, SoundCloud, Spotify)
+    // Mode 2: Parse & Resolve pasted URL (Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music, Audius)
     const rawUrl = (body.url || "").trim();
     const parsed = parseMusicUrl(rawUrl);
     if (!parsed) {
       return NextResponse.json(
         {
           error:
-            "URL không hợp lệ. Hỗ trợ link YouTube (Video/Playlist), SoundCloud hoặc Spotify (Track/Playlist/Album).",
+            "URL không hợp lệ. Hỗ trợ Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music và Audius.",
         },
         { status: 400 }
       );
+    }
+
+    // Extended platforms (Zing MP3, NhacCuaTui, Apple Music, Audius)
+    const extendedAdapter = findExtendedAdapterForUrl(rawUrl);
+    if (extendedAdapter) {
+      const resolvedExtended = await extendedAdapter.resolveUrl(rawUrl);
+      if (!resolvedExtended || resolvedExtended.tracks.length === 0) {
+        return NextResponse.json(
+          { error: `Không thể tải nội dung từ liên kết ${parsed.source} này.` },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json<ResolveResponse>(resolvedExtended, {
+        headers: {
+          "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=3600",
+        },
+      });
     }
 
     if (parsed.source === "youtube" && parsed.resourceType === "playlist") {
@@ -182,6 +221,13 @@ export async function POST(request: NextRequest) {
         title: artistData.profile.name,
         tracks: artistData.tracks,
       });
+    }
+
+    if (parsed.source !== "spotify") {
+      return NextResponse.json(
+        { error: "Không hỗ trợ định dạng liên kết này." },
+        { status: 400 }
+      );
     }
 
     // Spotify: Metadata extraction ONLY (lazy matching runs when user plays a track)

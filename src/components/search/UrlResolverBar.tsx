@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Link2, Loader2 } from "lucide-react";
 import type { ResolveResponse } from "@/lib/audio/types";
+import { parseMusicUrl } from "@/lib/audio/url-parser";
 import { BUTTON_MOTION } from "@/lib/ui/source-theme";
+import { SourceBadge } from "@/components/track/SourceBadge";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { getByokHeaders } from "@/store/useSettingsStore";
 
@@ -16,6 +18,8 @@ export function UrlResolverBar() {
     type: "error" | "success";
     message: string;
   } | null>(null);
+
+  const detectedSource = useMemo(() => parseMusicUrl(url)?.source ?? null, [url]);
 
   const router = useRouter();
   const playTrack = usePlayerStore((s) => s.playTrack);
@@ -92,9 +96,14 @@ export function UrlResolverBar() {
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Import Playlist / Track URL: Spotify (Track/Playlist/Album), YouTube (Video/Playlist), SoundCloud..."
-            className="w-full rounded-xl border border-white/10 bg-black/40 py-2.5 pl-10 pr-4 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-white/25 focus:outline-none"
+            placeholder="Dán link Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music hoặc Audius..."
+            className="w-full rounded-xl border border-white/10 bg-black/40 py-2.5 pl-10 pr-28 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-white/25 focus:outline-none"
           />
+          {detectedSource && (
+            <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2">
+              <SourceBadge source={detectedSource} />
+            </div>
+          )}
         </div>
         <motion.button
           type="submit"

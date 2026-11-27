@@ -1,129 +1,153 @@
 <div align="center">
 
-<img src="./public/icon.png" alt="HnBee Music" width="84" height="84" />
+<img src="./logo/logo%20w.png" alt="HnBee Music" width="110" />
 
 # HnBee Music
 
-**Unified Multi-Source Audiophile Music Streaming — Hợp nhất Spotify, YouTube & SoundCloud trong một không gian Glassmorphism 60fps.**
+**Unified Multi-Source Audiophile Music Streaming — Hợp nhất Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui & Apple Music trong một không gian Glassmorphism 60fps.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-1DB954.svg)](./LICENSE)
-[![Next.js](https://img.shields.io/badge/Next.js-15_App_Router-000000?logo=nextdotjs)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Framer Motion](https://img.shields.io/badge/Framer_Motion-60fps-FF0055?logo=framer&logoColor=white)](https://www.framer.com/motion/)
-[![Zustand](https://img.shields.io/badge/State-Zustand-443E38)](https://zustand-demo.pmnd.rs/)
+[![MIT License](https://img.shields.io/badge/License-MIT-10B981.svg)](./LICENSE)
+[![Next.js 15](https://img.shields.io/badge/Next.js-15_App_Router-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![TypeScript 5](https://img.shields.io/badge/TypeScript-5_Strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS 4](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Electron Desktop](https://img.shields.io/badge/Electron-Desktop_(.exe)-47848F?logo=electron&logoColor=white)](https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest)
 
 <br />
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://hnbeemusic.vercel.app)
+<a href="https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest/download/HnBee-Music-Setup.exe">
+  <img src="https://img.shields.io/badge/Download_for_Windows-v2.5.1_(.exe)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows v2.5.1 (.exe)" />
+</a>
 &nbsp;
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FHnguynbeeIT%2FHnBeeMusic&env=YOUTUBE_API_KEY,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET&envDescription=T%C3%B9y%20ch%E1%BB%8Dn%20-%20C%C3%B3%20th%E1%BB%83%20%C4%91%E1%BB%83%20tr%E1%BB%91ng%20v%C3%A0%20nh%E1%BA%ADp%20sau%20qua%20API%20Settings%20Modal)
+<a href="https://hnbeemusic.vercel.app/download">
+  <img src="https://img.shields.io/badge/All_Platforms-iOS_%E2%80%A2_Android_%E2%80%A2_PC-10B981?style=for-the-badge&logo=googlechrome&logoColor=white" alt="All Platforms — iOS, Android, PC" />
+</a>
+&nbsp;
+<a href="https://hnbeemusic.vercel.app">
+  <img src="https://img.shields.io/badge/Open_Web_Player-Live_App-18181B?style=for-the-badge&logo=vercel&logoColor=white" alt="Open Web Player — Live App" />
+</a>
 
 </div>
 
 ---
 
-## Tính năng nổi bật
+## Tính năng nổi bật (Key Highlights)
 
-- **Multi-Source Unified Audio Engine**: Phát liền mạch nhạc từ **Spotify**, **YouTube** và **SoundCloud** trên cùng một hàng đợi (`UnifiedTrack`), cơ chế **Single Active Engine** tự động dừng & reset nguồn cũ khi đổi nguồn, tích hợp **Media Session API** (phím cứng bàn phím & màn hình khóa).
-- **Zero-Interrupt Playback**: `AudioEngineManager` và Floating Glass Player Bar nằm cố định trong Root Layout — chuyển trang giữa *Khám phá*, *Trending*, *Tìm kiếm*, *Thư viện* không bao giờ ngắt nhạc.
-- **Lazy Spotify Stream Matching & Auto SoundCloud Client ID**:
-  - Dán link **Spotify Track / Playlist / Album** hoặc **YouTube Video / Playlist** để nạp vào Queue tức thì.
-  - Chỉ map bài Spotify sang Official Audio trên YouTube/SoundCloud (độ lệch `< 5s`, lọc nhiễu `cover/remix/live/reaction`) khi phát để tiết kiệm quota.
-  - Tự động trích xuất và cache `client_id` công khai của SoundCloud — người tự host không cần đăng ký app SoundCloud.
-- **Synced Lyrics (LRCLIB — Miễn phí, không cần API Key)**: Tự động đồng bộ lời bài hát theo thời gian thực (`[mm:ss.xx]`), tự cuộn mượt theo tiến độ phát, bấm vào bất kỳ câu nào để tua (`seekTo`) đến đúng giây đó.
-- **Cross-Platform Playlists**: Tạo, đổi tên, quản lý playlist trộn lẫn bài hát từ Spotify, YouTube & SoundCloud; hỗ trợ thả tim `Liked Songs` và đồng bộ PostgreSQL hoặc `localStorage`.
-- **Zero-Verification Dual-Mode Auth**:
-  - Tạo tài khoản nhanh chỉ với `username` + `password` (không cần email, OTP hay số điện thoại), có chống spam Rate Limit (5 tài khoản/giờ/IP).
-  - Có `DATABASE_URL` → lưu PostgreSQL (`bcryptjs` + HTTP-only Cookie JWT bằng `jose`). Không có `DATABASE_URL` → tự chạy **Local Browser Profile** kèm **Export / Import `.json`** sao lưu toàn bộ Playlist, Liked Songs & API Keys.
-- **BYOK (Bring Your Own Key)**: Nút **API Settings** ngay trên Sidebar cho phép người dùng bản demo online tự nhập API Key cá nhân (chỉ lưu ở `localStorage` của trình duyệt).
-- **Audiophile Glassmorphism & 60fps Motion**: Nền sâu `#09090b`, **Dynamic Ambient Glow** tự đổi màu theo ảnh bìa & nguồn phát (`#1DB954` / `#FF0000` / `#FF5500`), animation tăng tốc GPU bằng Framer Motion (`layoutId`, spring physics, `<AudioEqualizer />`).
+- **Multi-Source Unified Audio Engine:** Tìm kiếm, dán link và phát liền mạch bài hát từ **Spotify, YouTube, SoundCloud, Zing MP3, NhacCuaTui, Apple Music & Audius** trên cùng một hàng đợi (`UnifiedTrack`), không bị ngắt nhạc khi chuyển trang.
+- **Audio Stream Proxy (`HTTP 206 Partial Content`):** Hỗ trợ tua nhạc mượt mà, đính kèm anti-hotlink headers (`Referer`, `User-Agent`, `Cookie`) phía server qua `/api/stream/:unifiedId`, `/api/providers/zingmp3`, `/api/providers/nhaccuatui`, `/api/providers/audius` và `/api/audio-proxy`.
+- **Crossfade & Smart Gapless Preload:** Tùy chỉnh chuyển bài mượt `0s–8s`, tự động tải trước bài hát kế tiếp, cơ chế **Single Active Engine** triệt tiêu chồng âm và **SponsorBlock** tự động bỏ qua đoạn quảng cáo/intro trong MV YouTube.
+- **Synced Lyrics thời gian thực (Karaoke Mode):** Đồng bộ từng câu theo thời gian thực qua **LRCLIB** và lời đồng bộ `.lrc` gốc từ **Zing MP3 / NhacCuaTui**, chạm vào từng dòng lời để tua tức thì.
+- **OAuth Cloud Sync & BYOK:** Đăng nhập bằng **Google / Facebook** để đồng bộ tự động Playlist cá nhân, Bài hát đã thích và Nghệ sĩ theo dõi giữa máy tính & điện thoại; hỗ trợ **BYOK (Bring Your Own Key)** ngay trên giao diện Settings.
+- **Trải nghiệm Gốc trên Windows & Di động:** Bản **Windows Desktop (`.exe`)** có Frameless Dark TitleBar, System Tray chạy nền, Taskbar Thumbnail Controls (`Bài trước`, `Phát/Tạm dừng`, `Bài tiếp`), phím Media vật lý & OAuth Deep Link (`hnbeemusic://`); bản **iOS / Android PWA** tối ưu phát nhạc nền tắt màn hình & Dynamic Island.
 
 ---
 
-## Kiến trúc hệ thống (Multi-Platform Adapter Pattern & Stream Proxy)
+## Bảng So Sánh Nền Tảng & Tính Năng (Supported Platforms Matrix)
 
-```mermaid
-flowchart LR
-    UI["Audiophile Glass UI (Next.js App Router + Framer Motion)"]
-    Store["Zustand Stores (Player + Playlists + Auth + BYOK Settings)"]
-    Proxy["Audio Stream Proxy (GET /api/stream/:unifiedId — HTTP 206 Partial Content)"]
-    Agg["AggregatorService (Promise.allSettled + Stream TTL Cache)"]
-    Adapters["IAudioAdapter (YouTube | SoundCloud | Zing MP3 | NCT | Spotify | Apple Music)"]
+| Nền tảng (Platform) | Tìm kiếm (Search) | Import Link / Playlist | Lyrics đồng bộ (Synced `.lrc`) | Chạy nền iOS / Android / Windows | Cơ chế phát (Stream Mode) |
+|---|:---:|:---:|:---:|:---:|---|
+| **Spotify** | ✅ | ✅ Track / Playlist / Album / Artist | ✅ (LRCLIB) | ✅ | Metadata + Lazy Bridge (YouTube / SoundCloud) |
+| **YouTube** | ✅ | ✅ Video / Playlist | ✅ (LRCLIB) | ✅ | `youtubei.js` Direct Audio Proxy + IFrame Fallback |
+| **SoundCloud** | ✅ | ✅ Track / Shortlink | ✅ (LRCLIB) | ✅ | Direct Progressive MP3 / HLS + Widget Fallback |
+| **Zing MP3** | ✅ | ✅ Bài hát / Album / Playlist | ✅ Native `.lrc` + LRCLIB | ✅ | Server Proxy `/api/providers/zingmp3` (HMAC-SHA512, HTTP 206) |
+| **NhacCuaTui** | ✅ | ✅ Bài hát (`nhaccuatui.com`) | ✅ Native `.lrc` + LRCLIB | ✅ | Server Proxy `/api/providers/nhaccuatui` (Token + XML, HTTP 206) |
+| **Apple Music** | ✅ | ✅ Track / Album / Playlist | ✅ (LRCLIB) | ✅ | MusicKit / iTunes Metadata + Fallback Bridge (YouTube / Zing MP3) |
+| **Audius** | ✅ | ✅ Track / Playlist (`audius.co`) | ✅ (LRCLIB) | ✅ | Direct Open Discovery API `/api/providers/audius` (Zero-OAuth) |
 
-    UI <--> Store
-    UI -->|"UnifiedTrack (source:id)"| Proxy
-    Proxy -->|"Resolve + Referer/UA Headers"| Agg
-    Agg -->|"Parallel 5000ms Timeout + 1x Retry"| Adapters
+---
+
+## Hướng Dẫn Cài Đặt Nhanh Trên Từng Thiết Bị (Quick Install)
+
+### Windows Desktop (`.exe` — Windows 10/11 64-bit)
+1. Nhấn nút **[Download for Windows v2.5.1 (.exe)](https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest/download/HnBee-Music-Setup.exe)** ở đầu trang (hoặc tải bản chạy ngay [HnBee-Music-Portable.exe](https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest/download/HnBee-Music-Portable.exe)).
+2. Chạy tệp **`HnBee-Music-Setup.exe`** để cài đặt và tự động tạo lối tắt Desktop & Start Menu.
+3. > **Lưu ý Windows SmartScreen:** Do bộ cài mã nguồn mở đang trong quá trình hoàn tất chứng chỉ ký số EV, nếu Windows hiện hộp thoại xanh *"Windows protected your PC"*, hãy bấm **More info (Thông tin thêm)** → **Run anyway (Vẫn chạy)** để cài đặt bình thường.
+
+### iOS (iPhone / iPad — Safari)
+1. Mở **[https://hnbeemusic.vercel.app](https://hnbeemusic.vercel.app)** bằng trình duyệt **Safari**.
+2. Chạm vào biểu tượng **Chia sẻ (Share)** ở thanh dưới cùng → chọn **Thêm vào Màn hình chính (Add to Home Screen)** → bấm **Thêm (Add)**.
+3. Mở biểu tượng **HnBee Music** từ Màn hình chính để tận hưởng giao diện toàn màn hình mượt mà và nghe nhạc nền khi tắt màn hình.
+
+### Android (Google Chrome / Edge)
+1. Mở **[https://hnbeemusic.vercel.app](https://hnbeemusic.vercel.app)** bằng **Chrome**.
+2. Chạm biểu tượng menu **⋮** ở góc trên bên phải → chọn **Cài đặt ứng dụng (Install app)** hoặc **Thêm vào Màn hình chính**.
+
+---
+
+## Kiến Trúc Hệ Thống & Tự Build (Local Development & Architecture)
+
+```text
++---------------------------------------------------------------------------------+
+|                      CLIENT (Web / iOS PWA / Electron .exe)                     |
+|   Next.js 15 App Router  |  Zustand Stores  |  AudioEngineManager & Player Bar  |
++---------------------------------------+-----------------------------------------+
+                                        |
+                Search / Resolve URL    |   Stream Audio (Range: bytes=0-)
+                                        v
++---------------------------------------------------------------------------------+
+|                  NEXT.JS SERVERLESS API & STREAM PROXY LAYER                    |
+|   /api/search  |  /api/resolve  |  /api/stream/:unifiedId  |  /api/providers/*  |
++---------------------------------------+-----------------------------------------+
+                                        |
+                                        v
++---------------------------------------------------------------------------------+
+|                UNIFIED ADAPTER & AGGREGATOR LAYER (src/adapters/)               |
+|   BaseAdapter (5000ms Timeout, 1x Retry) + AggregatorService (TTL Stream Cache) |
+|   Spotify | YouTube | SoundCloud | Zing MP3 | NhacCuaTui | Apple Music | Audius |
++---------------------------------------------------------------------------------+
 ```
 
-## Platform Matrix (Bảng Trạng Thái Nền Tảng)
-
-| Nền tảng | `PlatformSource` | Trạng thái | Luồng phát & Chất lượng | Synced Lyrics | Biến `.env` liên quan |
-|---|---|---|---|---|---|
-| **YouTube** | `youtube` | ✅ Hoạt động | Direct Audio (`youtubei.js`, `128kbps`–`320kbps`) + `expiresAt` | Qua LRCLIB | `YOUTUBE_API_KEY` *(tùy chọn)* |
-| **SoundCloud** | `soundcloud` | ✅ Hoạt động | Direct Progressive MP3 / HLS (`128kbps`–`320kbps`) | Qua LRCLIB | `SOUNDCLOUD_CLIENT_ID` *(tự trích xuất nếu trống)* |
-| **Zing MP3** | `zingmp3` | ✅ Hoạt động | Direct MP3/M4A (`128kbps` miễn phí / `320kbps` với VIP cookie) | ✅ Có (`sentences` / LRC) | `ZINGMP3_COOKIE`, `ZINGMP3_API_KEY`, `ZINGMP3_SECRET_KEY` *(tùy chọn)* |
-| **NhacCuaTui** | `nct` | ✅ Hoạt động | Direct MP3/M4A (`128kbps`–`320kbps`, tự cấp token + XML fallback) | ✅ Có (`lrc`) | `NCT_ACCESS_TOKEN`, `NCT_API_SECRET` *(tùy chọn)* |
-| **Spotify** | `spotify` | ✅ Hoạt động (`requiresSdk: true`) | Metadata + Preview / Web Playback SDK (Widevine DRM) | Qua LRCLIB | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` |
-| **Apple Music** | `apple_music` | ✅ Hoạt động (`requiresSdk: true`) | MusicKit / iTunes Catalog + AAC Preview / MusicKit JS SDK (FairPlay DRM) | Qua LRCLIB | `APPLE_MUSIC_DEVELOPER_TOKEN`, `APPLE_MUSIC_STOREFRONT` *(tùy chọn)* |
-| **Deezer / Tidal / Bandcamp / Jamendo** | `deezer`, `tidal`, `bandcamp`, `jamendo` | 🔜 Sẵn sàng mở rộng | Đã chuẩn hóa sẵn trong `PlatformSource` & `BaseAdapter` | — | — |
-
----
-
-## Cài đặt Local trong 3 bước
-
-Yêu cầu: **Node.js 18+** và **npm**.
+### Chạy dự án trên máy cá nhân (Local Development)
+Yêu cầu: **Node.js 20+** và **npm**.
 
 ```bash
-# Bước 1: Clone repository
+# 1. Clone repository
 git clone https://github.com/HnguynbeeIT/HnBeeMusic.git
 cd HnBeeMusic
 
-# Bước 2: Cài đặt thư viện & tạo file cấu hình môi trường (tùy chọn)
+# 2. Cài đặt dependencies
 npm install
+
+# 3. Tạo file cấu hình môi trường (tùy chọn — có thể để trống để chạy Zero-Key Mode)
 cp .env.example .env.local
 
-# Bước 3: Khởi chạy ứng dụng
+# 4. Khởi chạy môi trường phát triển
 npm run dev
 ```
 
-Mở **[http://localhost:3000](http://localhost:3000)** để trải nghiệm ngay!
+Mở **[http://localhost:3000](http://localhost:3000)** để trải nghiệm.
 
-> **Chạy ngay không cần cấu hình**: Ứng dụng đi kèm 10 bài hát mẫu đa nguồn, tự động tìm kiếm SoundCloud & Synced Lyrics LRCLIB miễn phí, và chế độ **Local Browser Profile**. Bạn có thể thêm `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` vào `.env.local` (xem hướng dẫn lấy miễn phí tại [.env.example](./.env.example)) hoặc nhập trực tiếp qua nút **API Settings** trên giao diện.
-
----
-
-## Deploy lên Vercel (Production)
-
-1. Bấm nút **Deploy with Vercel** ở đầu trang này (trỏ trực tiếp tới `https://github.com/HnguynbeeIT/HnBeeMusic`).
-2. (Tùy chọn) Thêm các biến môi trường trên Vercel Dashboard → **Settings → Environment Variables**:
-   - `YOUTUBE_API_KEY`
-   - `SPOTIFY_CLIENT_ID` & `SPOTIFY_CLIENT_SECRET`
-   - `DATABASE_URL` & `AUTH_JWT_SECRET` (nếu muốn bật Cloud DB Sync cho tài khoản & playlist)
-3. Bấm **Deploy** — cấu hình `vercel.json` và `next.config.ts` đã được tối ưu sẵn cho Serverless Functions và ảnh bìa chất lượng cao từ YouTube, Spotify, SoundCloud.
+| Lệnh (`package.json`) | Chức năng |
+|---|---|
+| `npm run dev` | Chạy máy chủ phát triển Next.js tại `http://localhost:3000` |
+| `npm run typecheck` | Kiểm tra kiểu TypeScript nghiêm ngặt (`tsc --noEmit`) |
+| `npm run lint` | Kiểm tra chuẩn mã nguồn với ESLint |
+| `npm run build` | Biên dịch bản Production tối ưu (`next build`) |
+| `npm run start` | Khởi chạy bản Production sau khi build |
+| `npm run build:exe` | Đóng gói `HnBee-Music-Setup.exe` & `HnBee-Music-Portable.exe` (Windows x64) |
 
 ---
 
-## Đóng góp mã nguồn
+## Đóng Góp Mã Nguồn & Viết Thêm `AudioAdapter` Mới (Contributing)
 
-Mọi đóng góp (Pull Request, Issue, hoặc thêm `AudioAdapter` mới như Zing MP3, NhacCuaTui, Apple Music...) đều được hoan nghênh! Xem chi tiết tại [CONTRIBUTING.md](./CONTRIBUTING.md).
+Cộng đồng hoàn toàn có thể mở rộng thêm nền tảng mới (Deezer, Tidal, Bandcamp, Jamendo...) thông qua Pull Request hoặc Issue:
+
+1. **Fork & tạo nhánh mới:** `git checkout -b feat/adapter-<platform>`
+2. **Triển khai Adapter:** Tạo file `src/adapters/<platform>.adapter.ts` kế thừa `BaseAdapter` (`src/adapters/base.adapter.ts`) và đáp ứng interface `AudioAdapter` (`canHandleUrl`, `search`, `resolveUrl`, `getStreamUrl`, `getLyrics`).
+3. **Đăng ký Adapter & URL Parser:** Thêm pattern nhận diện URL vào `src/lib/audio/url-parser.ts`, màu nhận diện tại `src/lib/ui/source-theme.ts` và đăng ký vào `src/lib/adapters/extended-providers.ts` / `src/adapters/index.ts`.
+4. **Cấu hình mẫu:** Nếu cần API key, chỉ thêm tên biến (giá trị rỗng) vào `.env.example`, tuyệt đối không commit `.env.local`.
+5. **Kiểm tra & mở Pull Request:** Chạy `npm run typecheck && npm run build` đảm bảo 0 lỗi trước khi tạo Pull Request.
+
+Xem thêm hướng dẫn chi tiết tại [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md) và [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
-## Miễn trừ trách nhiệm bản quyền (Disclaimer)
+## Miễn Trừ Trách Nhiệm (Disclaimer)
 
-- **HnBee Music** là dự án mã nguồn mở phục vụ mục đích học tập, nghiên cứu kỹ thuật và trải nghiệm cá nhân.
-- Ứng dụng **không lưu trữ, không host lại và không cung cấp tính năng tải xuống** bất kỳ tệp âm thanh có bản quyền nào.
-- Mọi nội dung âm thanh, hình ảnh và metadata đều được phát trực tiếp từ các nền tảng gốc thông qua trình phát nhúng chính thức (**YouTube IFrame Player API**, **SoundCloud Widget API**) và các API công khai (**Spotify Web API / oEmbed**, **LRCLIB**).
-- Toàn bộ quyền sở hữu trí tuệ thuộc về nghệ sĩ, hãng thu âm và nền tảng tương ứng. Người dùng tự chịu trách nhiệm tuân thủ Điều khoản Dịch vụ (ToS) của các bên thứ ba khi tự triển khai (self-host) hoặc sử dụng API Key cá nhân.
+- **HnBee Music** là dự án mã nguồn mở phục vụ mục đích học tập, nghiên cứu kiến trúc phần mềm và trải nghiệm nghe nhạc cá nhân.
+- Ứng dụng không lưu trữ và không phân phối tệp âm thanh có bản quyền trên máy chủ riêng; mọi luồng phát và metadata đều được kết nối trực tiếp từ các nền tảng gốc theo yêu cầu của người dùng.
 
-## Author / Maintainer
+## Tác Giả & Bản Quyền (Author & License)
 
-- **Tác giả**: **Nguyễn Ngọc Hà Nguyên (HnBeeStudio)** — `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT))
-- **Portfolio**: [hanguynbeeit-portfolio.vercel.app](https://hanguynbeeit-portfolio.vercel.app)
-- **Windows Desktop (.exe)**: [Tải xuống bản mới nhất (GitHub Releases)](https://github.com/HnguynbeeIT/HnBeeMusic/releases/latest)
-
-## Giấy phép
-
-Phát hành dưới giấy phép **[MIT License](./LICENSE)** © 2026 Nguyễn Ngọc Hà Nguyên (HnBeeStudio).
+- **Tác giả:** **Nguyễn Ngọc Hà Nguyên (HnBeeStudio)** — `@_hnguynbee.hng_` ([HnguynbeeIT](https://github.com/HnguynbeeIT))
+- **Portfolio:** [hanguynbeeit-portfolio.vercel.app](https://hanguynbeeit-portfolio.vercel.app)
+- **Giấy phép:** Phát hành dưới giấy phép **[MIT License](./LICENSE)** &copy; 2026 **Nguyễn Ngọc Hà Nguyên (HnBeeStudio)**.

@@ -216,7 +216,7 @@ export const SAMPLE_LYRICS: Record<string, string[]> = {
 
 export function searchFallbackCatalog(
   query: string,
-  sourceFilter?: "all" | "youtube" | "soundcloud" | "spotify"
+  sourceFilter?: "all" | UnifiedTrack["source"]
 ): UnifiedTrack[] {
   const q = query.trim().toLowerCase();
   return FALLBACK_CATALOG.filter((track) => {

@@ -2,7 +2,15 @@ import type { TrackSource, UnifiedTrack } from "@/lib/audio/types";
 import type { UserPlaylist } from "@/store/usePlaylistStore";
 import type { FollowedArtist } from "@/store/useArtistStore";
 
-const VALID_SOURCES = new Set<TrackSource>(["youtube", "soundcloud", "spotify"]);
+const VALID_SOURCES = new Set<TrackSource>([
+  "youtube",
+  "soundcloud",
+  "spotify",
+  "zingmp3",
+  "nhaccuatui",
+  "apple_music",
+  "audius",
+]);
 
 export function safeDecodeParam(raw?: string | string[] | null): string {
   const str = Array.isArray(raw) ? raw[0] || "" : raw || "";
@@ -46,7 +54,9 @@ export function sanitizeTrack(input: unknown): UnifiedTrack | null {
     ...(typeof obj.streamUrl === "string" && obj.streamUrl
       ? { streamUrl: obj.streamUrl }
       : {}),
-    ...(obj.resolvedSource === "youtube" || obj.resolvedSource === "soundcloud"
+    ...(obj.resolvedSource === "youtube" ||
+    obj.resolvedSource === "soundcloud" ||
+    obj.resolvedSource === "zingmp3"
       ? { resolvedSource: obj.resolvedSource }
       : {}),
     ...(obj.isSnippet === true ? { isSnippet: true } : {}),

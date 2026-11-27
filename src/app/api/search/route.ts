@@ -10,6 +10,12 @@ import { searchYouTubeWithStatus } from "@/lib/adapters/youtube";
 import { searchSoundCloud } from "@/lib/adapters/soundcloud";
 import { searchSpotify } from "@/lib/adapters/spotify";
 import {
+  appleMusicProviderAdapter,
+  audiusProviderAdapter,
+  nhacCuaTuiProviderAdapter,
+  zingMp3ProviderAdapter,
+} from "@/lib/adapters/extended-providers";
+import {
   enrichArtistsWithTrackSignals,
   searchArtists,
 } from "@/lib/adapters/artist-search";
@@ -39,8 +45,21 @@ async function executeSearch(
   const wantYt = source === "all" || source === "youtube";
   const wantSc = source === "all" || source === "soundcloud";
   const wantSp = source === "all" || source === "spotify";
+  const wantZing = source === "all" || source === "zingmp3";
+  const wantNct = source === "nhaccuatui";
+  const wantApple = source === "all" || source === "apple_music";
+  const wantAudius = source === "all" || source === "audius";
 
-  const [ytResult, scTracks, spTracks, artists] = await Promise.all([
+  const [
+    ytResult,
+    scTracks,
+    spTracks,
+    zingTracks,
+    nctTracks,
+    appleTracks,
+    audiusTracks,
+    artists,
+  ] = await Promise.all([
     wantYt
       ? searchYouTubeWithStatus(query, 8, ytKey, region)
       : Promise.resolve({ tracks: [] as UnifiedTrack[], status: "api" as const }),
@@ -55,6 +74,18 @@ async function executeSearch(
           region
         )
       : Promise.resolve([]),
+    wantZing
+      ? zingMp3ProviderAdapter.search(query, source === "zingmp3" ? 12 : 4)
+      : Promise.resolve([]),
+    wantNct
+      ? nhacCuaTuiProviderAdapter.search(query, 12)
+      : Promise.resolve([]),
+    wantApple
+      ? appleMusicProviderAdapter.search(query, source === "apple_music" ? 12 : 4)
+      : Promise.resolve([]),
+    wantAudius
+      ? audiusProviderAdapter.search(query, source === "audius" ? 12 : 4)
+      : Promise.resolve([]),
     searchArtists(query, source, region, {
       youtubeApiKey: ytKey,
       spotifyClientId: spId,
@@ -65,7 +96,15 @@ async function executeSearch(
 
   const ytTracks = ytResult.tracks;
   const merged: UnifiedTrack[] = sortTracksByRegion(
-    [...spTracks, ...ytTracks, ...scTracks],
+    [
+      ...spTracks,
+      ...zingTracks,
+      ...nctTracks,
+      ...ytTracks,
+      ...appleTracks,
+      ...scTracks,
+      ...audiusTracks,
+    ],
     region
   );
 
@@ -78,6 +117,10 @@ async function executeSearch(
         youtube: ytResult.status === "api" ? "live" : ytResult.status,
         soundcloud: "fallback",
         spotify: hasSpKey ? "live" : "fallback",
+        zingmp3: zingTracks.length > 0 ? "live" : "fallback",
+        nhaccuatui: nctTracks.length > 0 ? "live" : "fallback",
+        apple_music: appleTracks.length > 0 ? "live" : "fallback",
+        audius: audiusTracks.length > 0 ? "live" : "fallback",
       },
     };
   }
@@ -96,6 +139,10 @@ async function executeSearch(
       youtube: ytResult.status === "api" ? "live" : ytResult.status,
       soundcloud: scTracks.length > 0 ? "live" : "fallback",
       spotify: hasSpKey ? "live" : "fallback",
+      zingmp3: zingTracks.length > 0 ? "live" : "fallback",
+      nhaccuatui: nctTracks.length > 0 ? "live" : "fallback",
+      apple_music: appleTracks.length > 0 ? "live" : "fallback",
+      audius: audiusTracks.length > 0 ? "live" : "fallback",
     },
   };
 }
@@ -110,7 +157,7 @@ const runCachedSearch = unstable_cache(
     const res = await executeSearch(query, source, region);
     return { ...res, cached: true };
   },
-  ["hnbee-multi-source-search-v7"],
+  ["hnbee-multi-source-search-v8"],
   { revalidate: 1800 }
 );
 
@@ -122,7 +169,11 @@ export async function GET(request: NextRequest) {
   const source: "all" | TrackSource =
     rawSource === "youtube" ||
     rawSource === "soundcloud" ||
-    rawSource === "spotify"
+    rawSource === "spotify" ||
+    rawSource === "zingmp3" ||
+    rawSource === "nhaccuatui" ||
+    rawSource === "apple_music" ||
+    rawSource === "audius"
       ? rawSource
       : "all";
 

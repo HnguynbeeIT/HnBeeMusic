@@ -4,7 +4,7 @@ import type { TrackSource } from "@/lib/audio/types";
 
 interface SourceBadgeProps {
   source: TrackSource;
-  resolvedSource?: "youtube" | "soundcloud";
+  resolvedSource?: "youtube" | "soundcloud" | "zingmp3";
   compact?: boolean;
 }
 
@@ -30,6 +30,30 @@ const SOURCE_META: Record<
     dotClass: "bg-orange-400",
     bgClass: "bg-orange-400/10 border-orange-400/20",
   },
+  zingmp3: {
+    label: "Zing MP3",
+    colorClass: "text-violet-400",
+    dotClass: "bg-violet-400",
+    bgClass: "bg-violet-400/10 border-violet-400/25",
+  },
+  nhaccuatui: {
+    label: "NhacCuaTui",
+    colorClass: "text-sky-400",
+    dotClass: "bg-sky-400",
+    bgClass: "bg-sky-400/10 border-sky-400/25",
+  },
+  apple_music: {
+    label: "Apple Music",
+    colorClass: "text-pink-400",
+    dotClass: "bg-pink-400",
+    bgClass: "bg-pink-400/10 border-pink-400/25",
+  },
+  audius: {
+    label: "Audius",
+    colorClass: "text-fuchsia-400",
+    dotClass: "bg-fuchsia-400",
+    bgClass: "bg-fuchsia-400/10 border-fuchsia-400/25",
+  },
 };
 
 export function SourceBadge({
@@ -37,14 +61,23 @@ export function SourceBadge({
   resolvedSource,
   compact = false,
 }: SourceBadgeProps) {
-  const meta = SOURCE_META[source];
+  const meta = SOURCE_META[source] ?? SOURCE_META.spotify;
+  const isBridged =
+    (source === "spotify" || source === "apple_music") && Boolean(resolvedSource);
+
+  const resolvedShort =
+    resolvedSource === "youtube"
+      ? "YT"
+      : resolvedSource === "zingmp3"
+      ? "ZM"
+      : "SC";
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium tracking-wide ${meta.bgClass} ${meta.colorClass}`}
       title={
-        source === "spotify" && resolvedSource
-          ? `Spotify metadata · phát qua ${resolvedSource}`
+        isBridged
+          ? `${meta.label} metadata · phát qua ${resolvedSource}`
           : meta.label
       }
     >
@@ -52,9 +85,7 @@ export function SourceBadge({
       {!compact && (
         <span>
           {meta.label}
-          {source === "spotify" && resolvedSource
-            ? ` → ${resolvedSource === "youtube" ? "YT" : "SC"}`
-            : ""}
+          {isBridged ? ` → ${resolvedShort}` : ""}
         </span>
       )}
     </span>

@@ -10,6 +10,7 @@ export type PlatformSource =
   | "nct"
   | "spotify"
   | "apple_music"
+  | "audius"
   | "deezer"
   | "tidal"
   | "bandcamp"
@@ -22,6 +23,7 @@ export const SUPPORTED_PLATFORM_SOURCES: readonly PlatformSource[] = [
   "nct",
   "spotify",
   "apple_music",
+  "audius",
   "deezer",
   "tidal",
   "bandcamp",

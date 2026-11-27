@@ -278,6 +278,32 @@ export class ZingMp3Adapter extends BaseAdapter {
     });
   }
 
+  public async getPlaylistInfo(
+    id: string
+  ): Promise<{ title: string; tracks: UnifiedTrack[] } | null> {
+    return this.safeExecute("getPlaylistInfo", null, async () => {
+      const cleanId = id.trim();
+      if (!cleanId) return null;
+
+      const playlist = await this.requestSignedApi<{
+        title?: string;
+        song?: { items?: ZingSongPayload[] };
+      }>("/api/v2/page/get/playlist", { id: cleanId });
+
+      const items = playlist?.song?.items ?? [];
+      if (items.length === 0) return null;
+
+      const tracks = items
+        .map((song) => this.mapSongToUnifiedTrack(song))
+        .filter((t): t is UnifiedTrack => Boolean(t));
+
+      return {
+        title: playlist?.title?.trim() || "Zing MP3 Playlist",
+        tracks,
+      };
+    });
+  }
+
   public async getStreamUrl(id: string): Promise<StreamData | null> {
     return this.safeExecute("getStreamUrl", null, async () => {
       const cleanId = id.trim();

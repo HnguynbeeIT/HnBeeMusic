@@ -1,4 +1,11 @@
-export type TrackSource = "youtube" | "soundcloud" | "spotify";
+export type TrackSource =
+  | "youtube"
+  | "soundcloud"
+  | "spotify"
+  | "zingmp3"
+  | "nhaccuatui"
+  | "apple_music"
+  | "audius";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -11,23 +18,38 @@ export interface UnifiedTrack {
   source: TrackSource;
   sourceUrl: string;
   /**
-   * Direct audio stream URL, or for Spotify tracks, the lazily matched
-   * YouTube/SoundCloud URL used by AudioEngineHost for full playback.
+   * Direct audio stream URL (e.g. `/api/providers/zingmp3?action=stream&id=...`),
+   * or for Spotify / Apple Music tracks, the lazily matched bridge URL used for full playback.
    */
   streamUrl?: string;
   /**
-   * Actual playback engine when source === 'spotify' after lazy matching.
+   * Actual playback engine when source === 'spotify' or 'apple_music' after lazy bridge matching.
    */
-  resolvedSource?: "youtube" | "soundcloud";
+  resolvedSource?: "youtube" | "soundcloud" | "zingmp3";
   /**
    * True when a SoundCloud Go+ track is restricted to a 30s snippet preview.
    */
   isSnippet?: boolean;
   /**
-   * Matched video/audio title & strict score from Spotify Lazy Matching (for verification & debug logs).
+   * Matched video/audio title & strict score from Lazy Matching.
    */
   matchedTitle?: string;
   matchScore?: number;
+}
+
+export interface AdapterLyricsResult {
+  synced: Array<{ time: number; text: string }>;
+  plain: string | null;
+  source: string;
+}
+
+export interface AudioAdapter {
+  readonly source: TrackSource;
+  canHandleUrl(url: string): boolean;
+  search(query: string, limit?: number): Promise<UnifiedTrack[]>;
+  resolveUrl(url: string): Promise<ResolveResponse | null>;
+  getStreamUrl(track: UnifiedTrack): Promise<string | null>;
+  getLyrics(track: UnifiedTrack): Promise<AdapterLyricsResult | null>;
 }
 
 export interface ArtistSearchItem {
@@ -54,6 +76,10 @@ export interface SearchResponse {
     youtube: "live" | "fallback" | "error";
     soundcloud: "live" | "fallback" | "error";
     spotify: "live" | "fallback" | "error";
+    zingmp3?: "live" | "fallback" | "error";
+    nhaccuatui?: "live" | "fallback" | "error";
+    apple_music?: "live" | "fallback" | "error";
+    audius?: "live" | "fallback" | "error";
   };
   cached?: boolean;
 }

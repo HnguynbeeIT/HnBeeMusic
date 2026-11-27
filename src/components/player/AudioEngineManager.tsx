@@ -40,6 +40,8 @@ function isDirectAudioUrl(url?: string): boolean {
   return (
     url.startsWith("/api/audio-proxy") ||
     url.startsWith("/api/proxy-audio") ||
+    url.startsWith("/api/providers/") ||
+    url.startsWith("/api/stream/") ||
     /\.(mp3|m4a|ogg|wav|aac|flac|opus|m3u8)(\?.*)?$/i.test(url) ||
     /cf-media\.sndcdn\.com|media\.soundcloud\.com|audio\.sndcdn\.com|soundcloud\.cloud|discoveryprovider\.audius\.co\/v1\/tracks\/[^/]+\/stream/i.test(
       url
@@ -52,10 +54,10 @@ function buildAudioProxyUrl(
     title: string;
     artist: string;
     duration: number;
-    source: "youtube" | "soundcloud" | "spotify";
+    source: string;
     sourceUrl: string;
     streamUrl?: string;
-    resolvedSource?: "youtube" | "soundcloud";
+    resolvedSource?: "youtube" | "soundcloud" | "zingmp3";
   },
   ytId: string | null
 ): string {
@@ -732,11 +734,12 @@ export function AudioEngineManager() {
     updateTrackInStore,
   ]);
 
-  // LAZY STREAM MATCHING for Spotify current track (0ms persistent localStorage cache first!)
+  // LAZY STREAM MATCHING for Spotify & Apple Music current track (0ms persistent localStorage cache first!)
   useEffect(() => {
     if (
       !currentTrack ||
-      currentTrack.source !== "spotify" ||
+      (currentTrack.source !== "spotify" &&
+        currentTrack.source !== "apple_music") ||
       (currentTrack.streamUrl && currentTrack.resolvedSource)
     ) {
       return;
@@ -820,12 +823,12 @@ export function AudioEngineManager() {
     updateTrackInStore,
   ]);
 
-  // LAZY PREFETCH: prefetch only the immediate next unmatched Spotify track
+  // LAZY PREFETCH: prefetch only the immediate next unmatched Spotify / Apple Music track
   useEffect(() => {
     const nextTrack = queue[queueIndex + 1];
     if (
       !nextTrack ||
-      nextTrack.source !== "spotify" ||
+      (nextTrack.source !== "spotify" && nextTrack.source !== "apple_music") ||
       (nextTrack.streamUrl && nextTrack.resolvedSource) ||
       matchingIdsRef.current.has(nextTrack.id)
     ) {

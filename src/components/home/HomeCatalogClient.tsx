@@ -57,6 +57,10 @@ const FILTER_TABS: Array<{ id: FilterValue; label: string; dotClass?: string }> 
   { id: "spotify", label: "Spotify", dotClass: "bg-[#1DB954]" },
   { id: "youtube", label: "YouTube", dotClass: "bg-[#FF0000]" },
   { id: "soundcloud", label: "SoundCloud", dotClass: "bg-[#FF5500]" },
+  { id: "zingmp3", label: "Zing MP3", dotClass: "bg-[#8B5CF6]" },
+  { id: "nhaccuatui", label: "NhacCuaTui", dotClass: "bg-[#0EA5E9]" },
+  { id: "apple_music", label: "Apple Music", dotClass: "bg-[#FA243C]" },
+  { id: "audius", label: "Audius", dotClass: "bg-[#CC0FE0]" },
 ];
 
 const listContainerVariants = {
@@ -687,7 +691,7 @@ export function HomeCatalogClient({
                 Tuyển chọn đa nền tảng
               </h2>
               <p className="text-xs text-zinc-400">
-                Spotify &bull; YouTube &bull; SoundCloud — tìm kiếm tức thì hoặc lọc theo nguồn phát
+                Spotify &bull; YouTube &bull; SoundCloud &bull; Zing MP3 &bull; NhacCuaTui &bull; Apple Music &bull; Audius
               </p>
             </div>
             <button

@@ -7,6 +7,30 @@ export type ParsedMusicUrl =
       resourceType: "track" | "playlist" | "album" | "artist";
       id: string;
       url: string;
+    }
+  | {
+      source: "zingmp3";
+      resourceType: "track" | "playlist";
+      id: string;
+      url: string;
+    }
+  | {
+      source: "nhaccuatui";
+      resourceType: "track" | "playlist";
+      id: string;
+      url: string;
+    }
+  | {
+      source: "apple_music";
+      resourceType: "track" | "album" | "playlist";
+      id: string;
+      storefront: string;
+      url: string;
+    }
+  | {
+      source: "audius";
+      resourceType: "track" | "playlist";
+      url: string;
     };
 
 const YOUTUBE_PLAYLIST_REGEX =
@@ -23,6 +47,30 @@ const SPOTIFY_URI_REGEX =
 
 const SOUNDCLOUD_REGEX =
   /(?:https?:\/\/)?(?:www\.|m\.)?(?:soundcloud\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+|on\.soundcloud\.com\/[a-zA-Z0-9]+)/i;
+
+const ZINGMP3_TRACK_REGEX =
+  /(?:https?:\/\/)?(?:www\.|m\.)?zingmp3\.vn\/bai-hat\/[^/?#]+\/([a-zA-Z0-9]+)\.html/i;
+
+const ZINGMP3_PLAYLIST_REGEX =
+  /(?:https?:\/\/)?(?:www\.|m\.)?zingmp3\.vn\/(?:album|playlist)\/[^/?#]+\/([a-zA-Z0-9]+)\.html/i;
+
+const NCT_TRACK_REGEX =
+  /(?:https?:\/\/)?(?:www\.|m\.)?nhaccuatui\.com\/bai-hat\/[^/?#]*\.([a-zA-Z0-9]+)\.html/i;
+
+const NCT_PLAYLIST_REGEX =
+  /(?:https?:\/\/)?(?:www\.|m\.)?nhaccuatui\.com\/playlist\/[^/?#]*\.([a-zA-Z0-9]+)\.html/i;
+
+const APPLE_MUSIC_PLAYLIST_REGEX =
+  /(?:https?:\/\/)?music\.apple\.com\/([a-z]{2})\/playlist\/[^/?#]+\/(pl\.[a-zA-Z0-9._-]+)/i;
+
+const APPLE_MUSIC_SONG_REGEX =
+  /(?:https?:\/\/)?music\.apple\.com\/([a-z]{2})\/song\/[^/?#]+\/(\d+)/i;
+
+const APPLE_MUSIC_ALBUM_REGEX =
+  /(?:https?:\/\/)?music\.apple\.com\/([a-z]{2})\/album\/[^/?#]+\/(\d+)(?:\?.*i=(\d+))?/i;
+
+const AUDIUS_REGEX =
+  /(?:https?:\/\/)?(?:www\.)?audius\.co\/([a-zA-Z0-9_.-]+)\/([^/?#]+(?:\/[^/?#]+)?)/i;
 
 export function parseMusicUrl(input: string): ParsedMusicUrl | null {
   const trimmed = input.trim();
@@ -61,6 +109,92 @@ export function parseMusicUrl(input: string): ParsedMusicUrl | null {
       resourceType,
       id: spMatch[2],
       url: `https://open.spotify.com/${resourceType}/${spMatch[2]}`,
+    };
+  }
+
+  const zingTrack = trimmed.match(ZINGMP3_TRACK_REGEX);
+  if (zingTrack?.[1]) {
+    return {
+      source: "zingmp3",
+      resourceType: "track",
+      id: zingTrack[1],
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    };
+  }
+
+  const zingPlaylist = trimmed.match(ZINGMP3_PLAYLIST_REGEX);
+  if (zingPlaylist?.[1]) {
+    return {
+      source: "zingmp3",
+      resourceType: "playlist",
+      id: zingPlaylist[1],
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    };
+  }
+
+  const nctTrack = trimmed.match(NCT_TRACK_REGEX);
+  if (nctTrack?.[1]) {
+    return {
+      source: "nhaccuatui",
+      resourceType: "track",
+      id: nctTrack[1],
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    };
+  }
+
+  const nctPlaylist = trimmed.match(NCT_PLAYLIST_REGEX);
+  if (nctPlaylist?.[1]) {
+    return {
+      source: "nhaccuatui",
+      resourceType: "playlist",
+      id: nctPlaylist[1],
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    };
+  }
+
+  const applePlaylist = trimmed.match(APPLE_MUSIC_PLAYLIST_REGEX);
+  if (applePlaylist?.[1] && applePlaylist?.[2]) {
+    return {
+      source: "apple_music",
+      resourceType: "playlist",
+      storefront: applePlaylist[1].toLowerCase(),
+      id: applePlaylist[2],
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    };
+  }
+
+  const appleSong = trimmed.match(APPLE_MUSIC_SONG_REGEX);
+  if (appleSong?.[1] && appleSong?.[2]) {
+    return {
+      source: "apple_music",
+      resourceType: "track",
+      storefront: appleSong[1].toLowerCase(),
+      id: appleSong[2],
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    };
+  }
+
+  const appleAlbum = trimmed.match(APPLE_MUSIC_ALBUM_REGEX);
+  if (appleAlbum?.[1] && appleAlbum?.[2]) {
+    const trackId = appleAlbum[3];
+    return {
+      source: "apple_music",
+      resourceType: trackId ? "track" : "album",
+      storefront: appleAlbum[1].toLowerCase(),
+      id: trackId || appleAlbum[2],
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    };
+  }
+
+  const audiusMatch = trimmed.match(AUDIUS_REGEX);
+  if (audiusMatch) {
+    const normalizedUrl = trimmed.startsWith("http")
+      ? trimmed
+      : `https://${trimmed}`;
+    return {
+      source: "audius",
+      resourceType: /\/playlist\//i.test(normalizedUrl) ? "playlist" : "track",
+      url: normalizedUrl,
     };
   }
 

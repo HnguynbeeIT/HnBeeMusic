@@ -1,11 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { fetchLyrics } from "@/lib/lyrics";
+import { zingMp3Adapter } from "@/adapters";
 
 export const maxDuration = 30;
 
 const getCachedLyrics = unstable_cache(
   async (id: string, title: string, artist: string, duration: number) => {
+    if (id.startsWith("zingmp3:")) {
+      const zingId = id.slice("zingmp3:".length);
+      const zingLyrics = await zingMp3Adapter.getLyrics(zingId);
+      if (zingLyrics && (zingLyrics.lines.length > 0 || zingLyrics.plainText)) {
+        return {
+          synced: zingLyrics.lines.map((l) => ({
+            time: l.timeMs / 1000,
+            text: l.text,
+          })),
+          plain: zingLyrics.plainText ?? null,
+          instrumental: false,
+          source: "zingmp3",
+        };
+      }
+    }
     return fetchLyrics({
       id: id || undefined,
       title,
@@ -13,7 +29,7 @@ const getCachedLyrics = unstable_cache(
       duration: duration > 0 ? duration : undefined,
     });
   },
-  ["hnbee-lrclib-lyrics"],
+  ["hnbee-lrclib-lyrics-v2"],
   { revalidate: 86400 }
 );
 

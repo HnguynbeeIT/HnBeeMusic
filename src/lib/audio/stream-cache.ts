@@ -3,7 +3,7 @@
 export interface CachedStreamEntry {
   youtubeId?: string;
   streamUrl: string;
-  resolvedSource: "youtube" | "soundcloud";
+  resolvedSource: "youtube" | "soundcloud" | "zingmp3";
   matchedTitle?: string;
   matchScore?: number;
   audioUrl?: string;
@@ -113,7 +113,7 @@ export function setCachedDirectAudioUrl(
   audioUrl: string,
   fallbackMeta?: {
     streamUrl: string;
-    resolvedSource: "youtube" | "soundcloud";
+    resolvedSource: "youtube" | "soundcloud" | "zingmp3";
     youtubeId?: string;
     matchedTitle?: string;
     matchScore?: number;

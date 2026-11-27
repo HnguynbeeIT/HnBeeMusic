@@ -42,6 +42,10 @@ const SOURCE_TABS: Array<{
   { id: "spotify", label: "Spotify", dotClass: "bg-[#1DB954]" },
   { id: "youtube", label: "YouTube", dotClass: "bg-[#FF0000]" },
   { id: "soundcloud", label: "SoundCloud", dotClass: "bg-[#FF5500]" },
+  { id: "zingmp3", label: "Zing MP3", dotClass: "bg-[#8B5CF6]" },
+  { id: "nhaccuatui", label: "NhacCuaTui", dotClass: "bg-[#0EA5E9]" },
+  { id: "apple_music", label: "Apple Music", dotClass: "bg-[#FA243C]" },
+  { id: "audius", label: "Audius", dotClass: "bg-[#CC0FE0]" },
 ];
 
 const listContainerVariants = {

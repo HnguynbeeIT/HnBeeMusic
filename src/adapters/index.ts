@@ -9,6 +9,7 @@ export { BaseAdapter } from "@/adapters/base.adapter";
 export { ZingMp3Adapter } from "@/adapters/zingmp3.adapter";
 export { NctAdapter } from "@/adapters/nct.adapter";
 export { AppleMusicAdapter } from "@/adapters/apple-music.adapter";
+export { AudiusAdapter } from "@/adapters/audius.adapter";
 export { SpotifyAdapter } from "@/adapters/spotify.adapter";
 export { YouTubeAdapter } from "@/adapters/youtube.adapter";
 export { SoundCloudAdapter } from "@/adapters/soundcloud.adapter";
@@ -16,6 +17,7 @@ export { registerVnAdapters, zingMp3Adapter, nctAdapter } from "@/adapters/regis
 export {
   registerGlobalAdapters,
   appleMusicAdapter,
+  audiusAdapter,
   spotifyAdapter,
   youtubeAdapter,
   soundcloudAdapter,
